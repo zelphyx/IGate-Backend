@@ -1,0 +1,27 @@
+# dependencies
+node_modules/
+
+# build
+dist/
+tsconfig.build.tsbuildinfo
+
+# env & secrets
+.env
+.env.local
+.env.*.local
+
+# docs (tidak ikut ke GitHub sesuai kesepakatan)
+*.md
+!docs/.gitkeep
+
+# storage (PDF tiket)
+storage/
+
+# logs
+logs/
+*.log
+
+# os / editor
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Admin {
+  id           Int       @id @default(autoincrement())
+  nama         String    @db.VarChar(100)
+  email        String    @unique @db.VarChar(150)
+  passwordHash String    @db.VarChar(255) @map("password_hash")
+  role         String    @db.VarChar(30)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  checkins     Tiket[]   @relation("CheckedInBy")
+  vouchers     Voucher[] @relation("DibuatOleh")
+  rekap        Rekap[]
+
+  @@map("admin")
+}
+
+model Tiket {
+  id               Int       @id @default(autoincrement())
+  nama             String    @db.VarChar(100)
+  nim              String    @db.VarChar(30)
+  angkatan         Int
+  nomorHp          String    @db.VarChar(20) @map("nomor_hp")
+  email            String    @db.VarChar(150)
+  hargaTiket       Decimal   @db.Decimal(12, 2) @map("harga_tiket")
+  kodeVoucher      String?   @db.VarChar(40) @map("kode_voucher")
+  diskon           Decimal   @default(0) @db.Decimal(12, 2)
+  totalBayar       Decimal   @db.Decimal(12, 2) @map("total_bayar")
+  statusPembayaran String    @db.VarChar(20) @map("status_pembayaran")
+  dokuInvoiceId    String?   @unique @db.VarChar(100) @map("doku_invoice_id")
+  qrToken          String?   @unique @db.VarChar(100) @map("qr_token")
+  statusTiket      String    @db.VarChar(20) @map("status_tiket")
+  checkedInAt      DateTime? @map("checked_in_at")
+  checkedInBy      Int?      @map("checked_in_by")
+  checkedByAdmin   Admin?    @relation("CheckedInBy", fields: [checkedInBy], references: [id])
+  createdAt        DateTime  @default(now()) @map("created_at")
+  paidAt           DateTime? @map("paid_at")
+  rekap            Rekap[]
+
+  @@index([nim])
+  @@index([statusPembayaran])
+  @@map("tiket")
+}
+
+model Voucher {
+  id           Int      @id @default(autoincrement())
+  kodeVoucher  String   @unique @db.VarChar(40) @map("kode_voucher")
+  namaPemberi  String   @db.VarChar(100) @map("nama_pemberi")
+  nim          String   @db.VarChar(30)
+  nomorHp      String   @db.VarChar(20) @map("nomor_hp")
+  nilaiVoucher Decimal  @db.Decimal(12, 2) @map("nilai_voucher")
+  status       String   @db.VarChar(20)
+  dibuatOleh   Int?     @map("dibuat_oleh")
+  pembuat      Admin?   @relation("DibuatOleh", fields: [dibuatOleh], references: [id])
+  createdAt    DateTime @default(now()) @map("created_at")
+  expiredAt    DateTime @map("expired_at")
+  rekap        Rekap[]
+
+  @@index([status])
+  @@map("voucher")
+}
+
+model Rekap {
+  id               Int      @id @default(autoincrement())
+  adminId          Int?     @map("admin_id")
+  admin            Admin?   @relation(fields: [adminId], references: [id])
+  tiketId          Int?     @map("tiket_id")
+  tiket            Tiket?   @relation(fields: [tiketId], references: [id])
+  voucherId        Int?     @map("voucher_id")
+  voucher          Voucher? @relation(fields: [voucherId], references: [id])
+  jenisTransaksi   String   @db.VarChar(30) @map("jenis_transaksi")
+  nominal          Decimal  @db.Decimal(12, 2)
+  metodePembayaran String   @db.VarChar(30) @map("metode_pembayaran")
+  status           String   @db.VarChar(20)
+  keterangan       String   @db.Text
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+  @@index([jenisTransaksi])
+  @@map("rekap")
+}

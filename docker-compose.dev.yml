@@ -1,0 +1,37 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: igate-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: igate_root
+      MYSQL_DATABASE: igate_ticketing
+      MYSQL_USER: igate
+      MYSQL_PASSWORD: igate_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - igate_mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pigate_root"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: igate-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - igate_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  igate_mysql_data:
+  igate_redis_data:
