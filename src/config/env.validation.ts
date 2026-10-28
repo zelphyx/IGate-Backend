@@ -13,6 +13,8 @@ export const envValidationSchema = Joi.object({
 
   DATABASE_URL: Joi.string().required(),
   REDIS_URL: Joi.string().required(),
+  STORAGE_DIR: Joi.string().allow('').optional(),
+  CORS_ORIGINS: Joi.string().allow('').optional(),
 
   JWT_SECRET: Joi.string().min(32).required(),
   JWT_REFRESH_SECRET: Joi.string().min(32).required(),
@@ -49,6 +51,7 @@ export const envValidationSchema = Joi.object({
   DISCORD_ERROR_WEBHOOK_URL: Joi.string().uri({ allowRelative: true }).allow('').default(''),
   DISCORD_ALERT_ROLE_ID: Joi.string().allow('').default(''),
   DISCORD_PANITIA_ROLE_ID: Joi.string().allow('').default(''),
+  DISCORD_ADMIN_ROLE_ID: Joi.string().allow('').default(''),
   DISCORD_SUPERADMIN_ROLE_ID: Joi.string().allow('').default(''),
   STOCK_ALERT_THRESHOLD: Joi.number().integer().min(1).max(100).default(10),
 });

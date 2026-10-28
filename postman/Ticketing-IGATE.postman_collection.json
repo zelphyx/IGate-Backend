@@ -1,0 +1,376 @@
+{
+  "info": {
+    "_postman_id": "b7e3a1c0-igate-4t2k-9abe-ticketing00001",
+    "name": "Ticketing IGATE API",
+    "description": "Koleksi endpoint backend Ticketing IGATE (NestJS + Tripay).\n\nCara pakai:\n1. Set variabel `baseUrl` (default http://localhost:3000/api/v1).\n2. Jalankan **Auth → Login** dulu — accessToken & refreshToken otomatis tersimpan ke variabel koleksi.\n3. Request admin lain otomatis memakai `{{accessToken}}`.\n4. Untuk callback Tripay di dev, signature stub-nya `valid-{panjang_body}` — hitung manual atau jalankan di TRIPAY_MODE=test dengan panjang sesuai.\n\nRole: S = superadmin, A = admin, SC = scanner, P = publik.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:3000/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "merchantRef", "value": "TKT-1" },
+    { "key": "ticketId", "value": "1" },
+    { "key": "voucherId", "value": "1" },
+    { "key": "adminId", "value": "2" },
+    { "key": "qrToken", "value": "" }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/health"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (auto-set token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "if (body.refreshToken) pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ketua@igate.id\",\n  \"password\": \"superadmin123\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Superadmin seed default. Ganti sesuai kebutuhan. Rate limit 5 permintaan/15 menit/IP."
+          }
+        },
+        {
+          "name": "Refresh token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        },
+        {
+          "name": "Me",
+          "request": { "method": "GET", "url": "{{baseUrl}}/auth/me" }
+        }
+      ]
+    },
+    {
+      "name": "Orders (publik)",
+      "item": [
+        {
+          "name": "Buat order (FR-2)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.merchantRef) pm.collectionVariables.set('merchantRef', body.merchantRef);",
+                  "if (body.merchantRef) {",
+                  "  const id = body.merchantRef.split('-')[1];",
+                  "  pm.collectionVariables.set('ticketId', id);",
+                  "}",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nama\": \"Budi Santoso\",\n  \"nim\": \"2406012123\",\n  \"nomorHp\": \"081234567890\",\n  \"email\": \"budi@mail.id\",\n  \"kodeVoucher\": \"\"\n}"
+            },
+            "url": "{{baseUrl}}/orders",
+            "description": "Rate limit 5/menit/IP. `kodeVoucher` opsional — hapus barisnya kalau tidak pakai voucher. NIM wajib diawali 2406012."
+          }
+        },
+        {
+          "name": "Cek status order (FR-2.5)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{merchantRef}}",
+            "description": "PII dimasking. UNPAID menyertakan instruksiBayar."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments",
+      "item": [
+        {
+          "name": "Callback Tripay (FR-3)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Stub TRIPAY_MODE=test: signature = 'valid-' + panjang body.\n// Produksi: HMAC-SHA256 dari raw body dengan private key.",
+                  "const raw = JSON.stringify(pm.request.body ? JSON.parse(pm.request.body.raw) : {});",
+                  "pm.collectionVariables.set('cbSignature', 'valid-' + raw.length);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" },
+              { "key": "X-Callback-Signature", "value": "{{cbSignature}}" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reference\": \"TEST-TKT-1\",\n  \"merchant_ref\": \"{{merchantRef}}\",\n  \"status\": \"PAID\",\n  \"payment_method\": \"QRIS\"\n}"
+            },
+            "url": "{{baseUrl}}/payments/callback",
+            "description": "status: PAID | EXPIRED | FAILED. merchant_ref `VCH-{id}` → pembayaran voucher. Idempotent."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Manajemen",
+      "item": [
+        {
+          "name": "Buat admin/scanner (S)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"scanner1@igate.id\",\n  \"nama\": \"Scanner Satu\",\n  \"password\": \"scanner12345\",\n  \"role\": \"scanner\"\n}"
+            },
+            "url": "{{baseUrl}}/admin"
+          }
+        },
+        {
+          "name": "Daftar admin (S)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin" }
+        },
+        {
+          "name": "Update admin (S)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nama\": \"Nama Baru\"\n}" },
+            "url": "{{baseUrl}}/admin/{{adminId}}"
+          }
+        },
+        {
+          "name": "Hapus admin (S)",
+          "request": { "method": "DELETE", "url": "{{baseUrl}}/admin/{{adminId}}" }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Orders",
+      "item": [
+        {
+          "name": "Daftar tiket (A/S)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/orders?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "status", "value": "PAID", "disabled": true },
+                { "key": "q", "value": "budi", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Detail tiket (A/S)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin/orders/{{ticketId}}" }
+        },
+        {
+          "name": "Verifikasi manual (A/S, BR-11)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/orders/{{ticketId}}/verify-manual",
+            "description": "Tandai tiket lunas via transfer manual. Dicatat rekap MANUAL + audit logCritical Discord. Scanner → 403."
+          }
+        },
+        {
+          "name": "Kirim ulang email tiket (A/S)",
+          "request": { "method": "POST", "url": "{{baseUrl}}/admin/orders/{{ticketId}}/resend-email" }
+        },
+        {
+          "name": "Unduh PDF tiket (A/S)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin/orders/{{ticketId}}/ticket-pdf" }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Vouchers",
+      "item": [
+        {
+          "name": "Buat voucher (A/S, T7)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.collectionVariables.set('voucherId', String(body.id));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"namaPemberi\": \"Sponsor ABC\",\n  \"nim\": \"1234567890\",\n  \"nomorHp\": \"081234567890\",\n  \"nominal\": 100000\n}"
+            },
+            "url": "{{baseUrl}}/admin/vouchers",
+            "description": "Membuat voucher PENDING + invoice Tripay VCH-{id}. Nominal harus dalam rentang VOUCHER_MIN/MAX_NOMINAL (BR-06)."
+          }
+        },
+        {
+          "name": "Daftar voucher (A/S)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/vouchers?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "vouchers"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "status", "value": "AKTIF", "disabled": true }
+              ]
+            }
+          }
+        },
+        {
+          "name": "Nonaktifkan voucher (S)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/admin/vouchers/{{voucherId}}/nonaktifkan",
+            "description": "Hanya voucher AKTIF yang bisa dinonaktifkan."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Check-in",
+      "item": [
+        {
+          "name": "Scan QR (SC/A/S, FR-6)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"qrToken\": \"{{qrToken}}\"\n}" },
+            "url": "{{baseUrl}}/admin/checkin/scan",
+            "description": "Ambil qrToken dari DB (kolom tiket.qr_token) atau hasil fulfillment. Dobel-scan → 409 SUDAH_CHECKIN."
+          }
+        },
+        {
+          "name": "Daftar kehadiran (A/S)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/checkins?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "checkins"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "from", "value": "2026-12-31T00:00:00.000Z", "disabled": true },
+                { "key": "to", "value": "2026-12-31T23:59:59.000Z", "disabled": true }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Rekap & Stats",
+      "item": [
+        {
+          "name": "Stats dashboard (A/S, FR-7.3)",
+          "request": { "method": "GET", "url": "{{baseUrl}}/admin/stats" }
+        },
+        {
+          "name": "Daftar rekap (A/S, FR-7.2)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/rekap?page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "rekap"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "from", "value": "", "disabled": true },
+                { "key": "to", "value": "", "disabled": true },
+                { "key": "jenis", "value": "PEMBELIAN_TIKET", "disabled": true },
+                { "key": "status", "value": "SUCCESS", "disabled": true }
+              ]
+            },
+            "description": "jenis: PEMBELIAN_TIKET | PEMBELIAN_VOUCHER. status: SUCCESS | FAILED."
+          }
+        }
+      ]
+    }
+  ]
+}

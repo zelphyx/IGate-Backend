@@ -2,6 +2,9 @@ import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
+import { EventEmitterModule } from '@nestjs/event-emitter';
+import { BullModule } from '@nestjs/bullmq';
 import { LoggerModule } from 'nestjs-pino';
 import configuration from './config/configuration';
 import { envValidationSchema } from './config/env.validation';
@@ -9,6 +12,14 @@ import { PrismaModule } from './prisma/prisma.module';
 import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
+import { DiscordModule } from './discord/discord.module';
+import { TripayModule } from './payments/tripay/tripay.module';
+import { OrdersModule } from './orders/orders.module';
+import { PaymentsModule } from './payments/payments.module';
+import { FulfillmentModule } from './fulfillment/fulfillment.module';
+import { VouchersModule } from './vouchers/vouchers.module';
+import { CheckinModule } from './checkin/checkin.module';
+import { RekapStatsModule } from './rekap/rekap-stats.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -31,10 +42,26 @@ import { RolesGuard } from './common/guards/roles.guard';
     ThrottlerModule.forRoot({
       throttlers: [{ ttl: 60_000, limit: 60 }],
     }),
+    BullModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (config: ConfigService) => ({
+        connection: { url: config.get<string>('redisUrl'), maxRetriesPerRequest: null },
+      }),
+    }),
+    ScheduleModule.forRoot(),
+    EventEmitterModule.forRoot(),
     PrismaModule,
     HealthModule,
     AuthModule,
     AdminModule,
+    DiscordModule,
+    TripayModule,
+    OrdersModule,
+    PaymentsModule,
+    VouchersModule,
+    FulfillmentModule,
+    CheckinModule,
+    RekapStatsModule,
   ],
   providers: [
     // Guard global berurutan: JWT → role → rate limit (FR-1.2)

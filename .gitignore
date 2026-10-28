@@ -5,6 +5,9 @@ node_modules/
 dist/
 tsconfig.build.tsbuildinfo
 
+# test coverage
+coverage/
+
 # env & secrets
 .env
 .env.local

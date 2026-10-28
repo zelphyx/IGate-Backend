@@ -3,6 +3,11 @@ export const configuration = () => ({
   port: parseInt(process.env.APP_PORT ?? '3000', 10),
   appBaseUrl: process.env.APP_BASE_URL ?? 'http://localhost:3000',
   returnUrl: process.env.RETURN_URL ?? 'http://localhost:3000/return',
+  corsOrigins: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean),
+  storageDir: process.env.STORAGE_DIR ?? 'storage',
 
   databaseUrl: process.env.DATABASE_URL,
   redisUrl: process.env.REDIS_URL,
@@ -12,12 +17,12 @@ export const configuration = () => ({
   jwtExpiresIn: '15m',
   jwtRefreshExpiresIn: '7d',
 
-  ticketPrice: new DecimalLike(process.env.TICKET_PRICE ?? '0'),
+  ticketPrice: process.env.TICKET_PRICE ?? '0',
   maxTickets: parseInt(process.env.MAX_TICKETS ?? '0', 10),
   paymentExpiryMinutes: parseInt(process.env.PAYMENT_EXPIRY_MINUTES ?? '360', 10),
   nimRegex: new RegExp(process.env.NIM_REGEX ?? '^2406012\\d{3,4}$'),
-  voucherMinNominal: new DecimalLike(process.env.VOUCHER_MIN_NOMINAL ?? '10000'),
-  voucherMaxNominal: new DecimalLike(process.env.VOUCHER_MAX_NOMINAL ?? '10000000'),
+  voucherMinNominal: process.env.VOUCHER_MIN_NOMINAL ?? '10000',
+  voucherMaxNominal: process.env.VOUCHER_MAX_NOMINAL ?? '10000000',
   eventDate: process.env.EVENT_DATE ? new Date(process.env.EVENT_DATE) : undefined,
 
   tripay: {
@@ -43,20 +48,10 @@ export const configuration = () => ({
     errorWebhookUrl: process.env.DISCORD_ERROR_WEBHOOK_URL,
     alertRoleId: process.env.DISCORD_ALERT_ROLE_ID,
     panitiaRoleId: process.env.DISCORD_PANITIA_ROLE_ID,
+    adminRoleId: process.env.DISCORD_ADMIN_ROLE_ID,
     superadminRoleId: process.env.DISCORD_SUPERADMIN_ROLE_ID,
     stockAlertThreshold: parseInt(process.env.STOCK_ALERT_THRESHOLD ?? '10', 10),
   },
 });
-
-/**
- * Wrapper string desimal agar config aman dari float (BR-13: dilarang aritmetika float).
- * Nilai penuh dipakai sebagai string; operasi aritmetika tetap di domain pakai Prisma Decimal.
- */
-export class DecimalLike {
-  constructor(public readonly value: string) {}
-  toString(): string {
-    return this.value;
-  }
-}
 
 export default configuration;

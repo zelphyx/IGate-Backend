@@ -60,6 +60,8 @@ model Voucher {
   pembuat      Admin?   @relation("DibuatOleh", fields: [dibuatOleh], references: [id])
   createdAt    DateTime @default(now()) @map("created_at")
   expiredAt    DateTime @map("expired_at")
+  /// Reference transaksi Tripay (penamaan legacy dibiarkan, keputusan A-1)
+  dokuInvoiceId String? @unique @db.VarChar(100) @map("doku_invoice_id")
   rekap        Rekap[]
 
   @@index([status])
