@@ -33,11 +33,10 @@ export const envValidationSchema = Joi.object({
     .required(),
   EVENT_DATE: Joi.date().iso().optional(),
 
-  TRIPAY_MODE: Joi.string().valid('sandbox', 'production', 'test').default('sandbox'),
-  TRIPAY_API_KEY: Joi.string().allow('').default(''),
-  TRIPAY_PRIVATE_KEY: Joi.string().allow('').default(''),
-  TRIPAY_MERCHANT_CODE: Joi.string().allow('').default(''),
-  TRIPAY_CHANNELS: Joi.string().default('QRIS'),
+  DOKU_MODE: Joi.string().valid('sandbox', 'production', 'test').default('sandbox'),
+  DOKU_CLIENT_ID: Joi.string().allow('').default(''),
+  DOKU_SECRET_KEY: Joi.string().allow('').default(''),
+  DOKU_CHANNELS: Joi.string().default('VIRTUAL_ACCOUNT_BCA'),
 
   SMTP_HOST: Joi.string().allow('').default(''),
   SMTP_PORT: Joi.number().port().default(587),

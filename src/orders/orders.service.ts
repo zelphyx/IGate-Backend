@@ -12,7 +12,7 @@ import {
 import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
 import { isZeroMoney, minMoney, subMoney } from '../common/utils/money';
 import { DiscordService } from '../discord/discord.service';
-import { TripayClient, TripayError } from '../payments/tripay/tripay.types';
+import { DokuClient, DokuError } from '../payments/doku/doku.types';
 import { PaymentsService } from '../payments/payments.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -35,7 +35,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject('TripayClient') private readonly tripay: TripayClient,
+    @Inject('DokuClient') private readonly doku: DokuClient,
     private readonly discord: DiscordService,
     private readonly events: EventEmitter2,
     private readonly payments: PaymentsService,
@@ -60,10 +60,10 @@ export class OrdersService {
     const hargaTiket = this.config.get<string>('ticketPrice')!;
     const maxTickets = this.config.get<number>('maxTickets')!;
     const expiryMinutes = this.config.get<number>('paymentExpiryMinutes')!;
-    const channels = this.config.get<string[]>('tripay.channels') ?? ['QRIS'];
+    const channels = this.config.get<string[]>('doku.channels') ?? ['VIRTUAL_ACCOUNT_BCA'];
 
     let created: Tiket;
-    let tripayFailed = false;
+    let dokuFailed = false;
     let fullCoverOrder = false;
 
     // Validasi voucher sebelum transaksi (kontrak VouchersService.validateForPurchase).
@@ -140,13 +140,13 @@ export class OrdersService {
         });
 
         if (fullCoverOrder) {
-          // BR-08 full-cover: tanpa invoice Tripay — langsung lunas via voucher (markTicketPaid
+          // BR-08 full-cover: tanpa invoice DOKU — langsung lunas via voucher (markTicketPaid
           // yang mengonsumsi voucher & membuat rekap format baku, FR-7.1a).
           return tiket;
         }
 
         try {
-          const trx = await this.tripay.createTransaction({
+          const trx = await this.doku.createTransaction({
             merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
             amount: Number(totalBayar),
             expiredMinutes: expiryMinutes,
@@ -161,8 +161,8 @@ export class OrdersService {
             data: { dokuInvoiceId: trx.reference },
           });
         } catch {
-          // Tripay gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
-          tripayFailed = true;
+          // DOKU gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
+          dokuFailed = true;
           return await tx.tiket.update({
             where: { id: tiket.id },
             data: { statusPembayaran: TICKET_PAYMENT_STATUS.FAILED },
@@ -186,10 +186,10 @@ export class OrdersService {
         (await this.prisma.tiket.findUnique({ where: { id: created.id } })) ?? created;
     }
 
-    if (tripayFailed) {
-      this.discord.logWarn(`Tripay gagal dibuat untuk order TKT-${created.id} (pembeli terblokir sementara)`);
+    if (dokuFailed) {
+      this.discord.logWarn(`DOKU gagal dibuat untuk order TKT-${created.id} (pembeli terblokir sementara)`);
       throw new HttpException(
-        { statusCode: 502, code: 'TRIPAY_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
+        { statusCode: 502, code: 'DOKU_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
         HttpStatus.BAD_GATEWAY,
       );
     }
@@ -225,11 +225,11 @@ export class OrdersService {
     return tiket;
   }
 
-  /** Detail Tripay live untuk instruksi bayar di halaman cek status (FR-2.5). */
+  /** Detail DOKU live untuk instruksi bayar di halaman cek status (FR-2.5). */
   async getLiveInstruction(tiket: Tiket): Promise<{ checkoutUrl?: string }> {
     if (!tiket.dokuInvoiceId) return {};
     try {
-      const detail = await this.tripay.getTransactionDetail(tiket.dokuInvoiceId);
+      const detail = await this.doku.getTransactionDetail(tiket.dokuInvoiceId);
       return { checkoutUrl: detail.checkoutUrl };
     } catch {
       return {};

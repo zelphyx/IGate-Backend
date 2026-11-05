@@ -2,7 +2,7 @@
   "info": {
     "_postman_id": "b7e3a1c0-igate-4t2k-9abe-ticketing00001",
     "name": "Ticketing IGATE API",
-    "description": "Koleksi endpoint backend Ticketing IGATE (NestJS + Tripay).\n\nCara pakai:\n1. Set variabel `baseUrl` (default http://localhost:3000/api/v1).\n2. Jalankan **Auth → Login** dulu — accessToken & refreshToken otomatis tersimpan ke variabel koleksi.\n3. Request admin lain otomatis memakai `{{accessToken}}`.\n4. Untuk callback Tripay di dev, signature stub-nya `valid-{panjang_body}` — hitung manual atau jalankan di TRIPAY_MODE=test dengan panjang sesuai.\n\nRole: S = superadmin, A = admin, SC = scanner, P = publik.",
+    "description": "Koleksi endpoint backend Ticketing IGATE (NestJS + DOKU).\n\nCara pakai:\n1. Set variabel `baseUrl` (default http://localhost:3000/api/v1).\n2. Jalankan **Auth → Login** dulu — accessToken & refreshToken otomatis tersimpan ke variabel koleksi.\n3. Request admin lain otomatis memakai `{{accessToken}}`.\n4. Untuk callback DOKU di dev (DOKU_MODE=test), signature stub-nya `valid-{panjang_body}` — hitung manual atau jalankan dengan panjang sesuai.\n\nRole: S = superadmin, A = admin, SC = scanner, P = publik.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
@@ -150,14 +150,14 @@
       "name": "Payments",
       "item": [
         {
-          "name": "Callback Tripay (FR-3)",
+          "name": "Callback DOKU (FR-3)",
           "event": [
             {
               "listen": "prerequest",
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "// Stub TRIPAY_MODE=test: signature = 'valid-' + panjang body.\n// Produksi: HMAC-SHA256 dari raw body dengan private key.",
+                  "// Stub DOKU_MODE=test: signature = 'valid-' + panjang body.\n// Produksi: HMACSHA256= HMAC-SHA256 base64 atas komponen Client-Id/Request-Id/Request-Timestamp/Request-Target/Digest dengan Secret Key.",
                   "const raw = JSON.stringify(pm.request.body ? JSON.parse(pm.request.body.raw) : {});",
                   "pm.collectionVariables.set('cbSignature', 'valid-' + raw.length);"
                 ]
@@ -169,14 +169,17 @@
             "method": "POST",
             "header": [
               { "key": "Content-Type", "value": "application/json" },
-              { "key": "X-Callback-Signature", "value": "{{cbSignature}}" }
+              { "key": "Client-Id", "value": "postman-client" },
+              { "key": "Request-Id", "value": "{{$guid}}" },
+              { "key": "Request-Timestamp", "value": "2024-01-01T00:00:00Z" },
+              { "key": "Signature", "value": "{{cbSignature}}" }
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"reference\": \"TEST-TKT-1\",\n  \"merchant_ref\": \"{{merchantRef}}\",\n  \"status\": \"PAID\",\n  \"payment_method\": \"QRIS\"\n}"
+              "raw": "{\n  \"order\": {\n    \"invoice_number\": \"{{merchantRef}}\",\n    \"amount\": 100000\n  },\n  \"transaction\": {\n    \"status\": \"SUCCESS\",\n    \"original_request_id\": \"TEST-TKT-1\",\n    \"date\": \"2024-01-01T00:00:00Z\"\n  },\n  \"channel\": {\n    \"id\": \"VIRTUAL_ACCOUNT_BCA\"\n  }\n}"
             },
             "url": "{{baseUrl}}/payments/callback",
-            "description": "status: PAID | EXPIRED | FAILED. merchant_ref `VCH-{id}` → pembayaran voucher. Idempotent."
+            "description": "transaction.status: SUCCESS | EXPIRED | FAILED. order.invoice_number `VCH-{id}` → pembayaran voucher. Idempotent."
           }
         }
       ]
@@ -282,7 +285,7 @@
               "raw": "{\n  \"namaPemberi\": \"Sponsor ABC\",\n  \"nim\": \"1234567890\",\n  \"nomorHp\": \"081234567890\",\n  \"nominal\": 100000\n}"
             },
             "url": "{{baseUrl}}/admin/vouchers",
-            "description": "Membuat voucher PENDING + invoice Tripay VCH-{id}. Nominal harus dalam rentang VOUCHER_MIN/MAX_NOMINAL (BR-06)."
+            "description": "Membuat voucher PENDING + invoice DOKU VCH-{id}. Nominal harus dalam rentang VOUCHER_MIN/MAX_NOMINAL (BR-06)."
           }
         },
         {

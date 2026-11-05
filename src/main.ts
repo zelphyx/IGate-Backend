@@ -40,7 +40,7 @@ function bullBoardAuthHandler(
 }
 
 async function bootstrap(): Promise<void> {
-  // rawBody: true → HMAC verifikasi callback Tripay atas body mentah (FR-3.2)
+  // rawBody: true → HMAC verifikasi callback DOKU atas body mentah (FR-3.2)
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   app.useLogger(app.get(Logger));
   app.use(helmet());

@@ -18,7 +18,7 @@ import {
 } from '../common/constants';
 import { maskEmail } from '../common/utils/mask';
 import { DiscordService } from '../discord/discord.service';
-import { parseCallbackJson } from './tripay/tripay.service';
+import { parseCallbackJson } from './doku/doku.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 
 export interface MarkPaidResult {
@@ -39,8 +39,8 @@ export class PaymentsService {
   ) {}
 
   /**
-   * Webhook Tripay (FR-3.3): signature diverifikasi oleh pemanggil atas raw body.
-   * Idempotent — callback berulang tanpa efek samping, selalu balas sukses agar Tripay berhenti retry.
+   * Webhook DOKU (FR-3.3): signature diverifikasi oleh pemanggil atas raw body.
+   * Idempotent — callback berulang tanpa efek samping, selalu balas sukses agar DOKU berhenti retry.
    */
   async handleCallback(rawBody: Buffer | string): Promise<{ success: true }> {
     const payload = parseCallbackJson(rawBody);
@@ -56,7 +56,7 @@ export class PaymentsService {
         const result = await this.vouchers.markVoucherPaid(
           voucherId,
           payload.payment_method ?? '-',
-          `Callback Tripay ref=${payload.reference}`,
+          `Callback DOKU ref=${payload.reference}`,
         );
         if (result.reason === 'TIDAK_ADA') {
           this.logger.warn(`Callback PAID untuk voucher tak dikenal VCH-${voucherId}`);
@@ -85,7 +85,7 @@ export class PaymentsService {
         tiketId,
         payload.payment_method ?? '-',
         null,
-        `Callback Tripay ref=${payload.reference}`,
+        `Callback DOKU ref=${payload.reference}`,
       );
       if (result.reason === 'TIDAK_ADA') {
         this.logger.warn(`Callback PAID untuk tiket tak dikenal TKT-${tiketId}`);
@@ -106,7 +106,7 @@ export class PaymentsService {
   }
 
   /**
-   * SATU PINTU semua jalur tiket lunas: callback Tripay, verifikasi manual superadmin,
+   * SATU PINTU semua jalur tiket lunas: callback DOKU, verifikasi manual superadmin,
    * voucher full-cover Task 8 (PLAN §T5). Idempotent & race-safe lewat transaksi.
    */
   async markTicketPaid(
@@ -225,7 +225,7 @@ export class PaymentsService {
         metodePembayaran: payload.payment_method ?? '-',
         status: REKAP_STATUS.FAILED,
         tiketId,
-        keterangan: `Callback Tripay status=${status}`,
+        keterangan: `Callback DOKU status=${status}`,
       },
     });
     return { processed: true };

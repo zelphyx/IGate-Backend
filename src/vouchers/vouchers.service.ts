@@ -18,7 +18,7 @@ import {
 import { maskNim, maskPhone } from '../common/utils/mask';
 import { toCents } from '../common/utils/money';
 import { DiscordService } from '../discord/discord.service';
-import { TripayClient } from '../payments/tripay/tripay.types';
+import { DokuClient } from '../payments/doku/doku.types';
 import { VOUCHER_CODE_REGEX, generateVoucherCode } from './voucher-code';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 
@@ -48,11 +48,11 @@ export class VouchersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject('TripayClient') private readonly tripay: TripayClient,
+    @Inject('DokuClient') private readonly doku: DokuClient,
     private readonly discord: DiscordService,
   ) {}
 
-  /** FR-5.1: admin isi form → voucher PENDING → invoice Tripay `VCH-{id}` → kode tampil (FR-5.2). */
+  /** FR-5.1: admin isi form → voucher PENDING → invoice DOKU `VCH-{id}` → kode tampil (FR-5.2). */
   async create(dto: CreateVoucherDto, adminId: number): Promise<VoucherInstruction> {
     const minNominal = this.config.get<string>('voucherMinNominal')!;
     const maxNominal = this.config.get<string>('voucherMaxNominal')!;
@@ -76,7 +76,7 @@ export class VouchersService {
       eventDate && eventDate.getTime() > Date.now()
         ? eventDate
         : new Date(Date.now() + 30 * 24 * 60 * 60_000);
-    const channels = this.config.get<string[]>('tripay.channels') ?? ['QRIS'];
+    const channels = this.config.get<string[]>('doku.channels') ?? ['VIRTUAL_ACCOUNT_BCA'];
 
     let voucher: Voucher;
     let reference: string;
@@ -103,7 +103,7 @@ export class VouchersService {
             if (attempt === 4) throw err;
           }
         }
-        const trx = await this.tripay.createTransaction({
+        const trx = await this.doku.createTransaction({
           merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
           amount: dto.nominal,
           expiredMinutes: expiryMinutes,
@@ -123,7 +123,7 @@ export class VouchersService {
       throw new HttpException(
         {
           statusCode: 502,
-          code: 'TRIPAY_GAGAL',
+          code: 'DOKU_GAGAL',
           message: 'Gagal membuat invoice pembayaran voucher. Coba beberapa saat lagi.',
         },
         HttpStatus.BAD_GATEWAY,
@@ -149,7 +149,7 @@ export class VouchersService {
       nominal: dto.nominal,
       instruksiBayar: {
         channel: channels[0],
-        checkoutUrl: reference ? `tripay:${reference}` : '',
+        checkoutUrl: reference ? `doku:${reference}` : '',
         expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
       },
     };
@@ -282,7 +282,7 @@ export class VouchersService {
         metodePembayaran: metode,
         status: REKAP_STATUS.FAILED,
         voucherId,
-        keterangan: `Callback Tripay status=${status}`,
+        keterangan: `Callback DOKU status=${status}`,
       },
     });
     return { processed: true };

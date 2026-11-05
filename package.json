@@ -1,7 +1,7 @@
 {
   "name": "ticketing-igate-backend",
   "version": "0.1.0",
-  "description": "Backend pemesanan tiket IGATE — NestJS + Prisma + Tripay",
+  "description": "Backend pemesanan tiket IGATE — NestJS + Prisma + DOKU",
   "private": true,
   "engines": {
     "node": ">=20"
@@ -14,7 +14,7 @@
     "test": "jest",
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
-    "test:e2e": "TRIPAY_MODE=test jest --config ./test/jest-e2e.json",
+    "test:e2e": "DOKU_MODE=test jest --config ./test/jest-e2e.json",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",

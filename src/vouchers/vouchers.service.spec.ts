@@ -15,7 +15,7 @@ const CONFIG = {
   voucherMinNominal: '10000',
   voucherMaxNominal: '10000000',
   paymentExpiryMinutes: 360,
-  'tripay.channels': ['QRIS'],
+  'doku.channels': ['VIRTUAL_ACCOUNT_BCA'],
   eventDate: undefined,
 };
 
@@ -38,7 +38,7 @@ describe('VouchersService (T7)', () => {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   let service: VouchersService;
   let prisma: any;
-  let tripay: { createTransaction: jest.Mock };
+  let doku: { createTransaction: jest.Mock };
   let discord: { logInfo: jest.Mock };
 
   beforeEach(async () => {
@@ -54,11 +54,11 @@ describe('VouchersService (T7)', () => {
       rekap: { create: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn(prisma)),
     };
-    tripay = {
+    doku = {
       createTransaction: jest.fn().mockResolvedValue({
         reference: 'TRXV1',
         merchantRef: 'VCH-1',
-        checkoutUrl: 'https://tripay.test/VCH-1',
+        checkoutUrl: 'https://doku.test/VCH-1',
         amount: 50000,
         expiredAt: new Date(),
       }),
@@ -70,7 +70,7 @@ describe('VouchersService (T7)', () => {
         VouchersService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: (k: string) => (CONFIG as any)[k] } },
-        { provide: 'TripayClient', useValue: tripay },
+        { provide: 'DokuClient', useValue: doku },
         { provide: DiscordService, useValue: discord },
       ],
     }).compile();
@@ -86,7 +86,7 @@ describe('VouchersService (T7)', () => {
     expect(prisma.voucher.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING', dibuatOleh: 1 }) }),
     );
-    expect(tripay.createTransaction).toHaveBeenCalledWith(
+    expect(doku.createTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ merchantRef: 'VCH-1', amount: 50000 }),
     );
     expect(prisma.rekap.create).not.toHaveBeenCalled();
@@ -104,9 +104,9 @@ describe('VouchersService (T7)', () => {
     });
   });
 
-  it('createTransaction gagal → 502 TRIPAY_GAGAL', async () => {
-    tripay.createTransaction.mockRejectedValue(new Error('down'));
-    await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'TRIPAY_GAGAL' } });
+  it('createTransaction gagal → 502 DOKU_GAGAL', async () => {
+    doku.createTransaction.mockRejectedValue(new Error('down'));
+    await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'DOKU_GAGAL' } });
   });
 
   describe('validateForPurchase (kontrak T8)', () => {

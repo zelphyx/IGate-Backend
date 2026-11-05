@@ -29,7 +29,7 @@ function publicView(tiket: Tiket) {
     totalBayar: tiket.totalBayar,
     statusPembayaran: tiket.statusPembayaran,
     statusTiket: tiket.statusTiket,
-    expiredAt: tiket.paidAt ? undefined : null, // instruksi live menyusul dari Tripay detail
+    expiredAt: tiket.paidAt ? undefined : null, // instruksi live menyusul dari DOKU detail
   };
 }
 

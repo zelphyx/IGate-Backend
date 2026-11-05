@@ -9,11 +9,11 @@ import {
   VOUCHER_STATUS,
 } from '../common/constants';
 import { DiscordService } from '../discord/discord.service';
-import { TripayClient } from './tripay/tripay.types';
+import { DokuClient } from './doku/doku.types';
 
 /**
  * Sweep expiry tiap 1 menit (BR-05): tiket UNPAID melewati batas → EXPIRED
- * + tutup transaksi di sisi Tripay + rekap FAILED. Idempotent lewat update kondisional.
+ * + tutup transaksi di sisi DOKU + rekap FAILED. Idempotent lewat update kondisional.
  * Juga menyapu voucher PENDING >6 jam & voucher AKTIF lewat expired_at (FR-5.4).
  */
 @Injectable()
@@ -24,7 +24,7 @@ export class SweepService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject('TripayClient') private readonly tripay: TripayClient,
+    @Inject('DokuClient') private readonly doku: DokuClient,
     private readonly discord: DiscordService,
   ) {}
 
@@ -53,7 +53,7 @@ export class SweepService {
 
     for (const t of expired) {
       if (t.dokuInvoiceId) {
-        await this.tripay.closeTransaction(t.dokuInvoiceId).catch((err: Error) =>
+        await this.doku.closeTransaction(t.dokuInvoiceId).catch((err: Error) =>
           this.logger.warn(`closeTransaction gagal untuk TKT-${t.id}: ${err.message}`),
         );
       }
@@ -90,7 +90,7 @@ export class SweepService {
     });
     for (const v of pending) {
       if (v.dokuInvoiceId) {
-        await this.tripay.closeTransaction(v.dokuInvoiceId).catch((err: Error) =>
+        await this.doku.closeTransaction(v.dokuInvoiceId).catch((err: Error) =>
           this.logger.warn(`closeTransaction voucher gagal untuk VCH-${v.id}: ${err.message}`),
         );
       }

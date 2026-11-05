@@ -79,10 +79,11 @@ export class BotService implements OnModuleDestroy {
         await rest.put(
           Routes.applicationGuildCommands(c.user.id, this.guildId!),
           {
+            // type 3 = ApplicationCommandOptionType.String
             body: BOT_COMMANDS.map((cmd) => ({
               name: cmd.name,
               description: cmd.description,
-              options: cmd.options ?? [],
+              options: cmd.options?.map((opt) => ({ ...opt, type: 3 })) ?? [],
             })),
           },
         );
@@ -116,7 +117,11 @@ export class BotService implements OnModuleDestroy {
       await this.safeReply(interaction, 'Perintah tidak dikenal.');
       return;
     }
-    const memberRoleIds = [...(interaction.member?.roles as Collection<string, unknown> | undefined)?.keys() ?? []];
+    // v14: GuildMember.roles = RoleManager (pakai .cache); API interaction: Collection langsung
+    const rawRoles = interaction.member?.roles as unknown;
+    const memberRoleIds: string[] = rawRoles instanceof Collection
+      ? [...rawRoles.keys()]
+      : [...((rawRoles as { cache?: Collection<string, unknown> })?.cache?.keys() ?? [])];
     if (!canUseCommand(def, memberRoleIds, this.roleIds)) {
       await this.safeReply(interaction, 'Kamu tidak punya role untuk perintah ini.');
       return;

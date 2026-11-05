@@ -7,7 +7,7 @@ import { PrismaService } from '../src/prisma/prisma.module';
 
 /**
  * E2E penuh (PLAN §T12, PRD §15) — memakai infra nyata dari docker-compose.dev.yml
- * (MySQL + Redis) dan Tripay stub (TRIPAY_MODE=test). SMTP tidak diset → transport log.
+ * (MySQL + Redis) dan DOKU stub (DOKU_MODE=test). SMTP tidak diset → transport log.
  *
  * Jalankan: npm run test:e2e
  */
@@ -19,7 +19,7 @@ const callback = (
 ) =>
   request(app.getHttpServer())
     .post('/api/v1/payments/callback')
-    .set('X-Callback-Signature', signature)
+    .set('Client-Id', 'cid').set('Request-Id', 'rid').set('Request-Timestamp', '2024-01-01T00:00:00Z').set('Signature', signature)
     .send(body);
 
 const stubSignature = (body: string) => `valid-${Buffer.byteLength(body)}`;
@@ -92,9 +92,9 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
 
     const body = JSON.stringify({
       reference: 'E2E-TRX1',
-      merchant_ref: res.body.merchantRef,
-      status: 'PAID',
-      payment_method: 'QRIS',
+      invoice_number: res.body.merchantRef,
+      status: 'SUCCESS',
+      channel: { id: 'VIRTUAL_ACCOUNT_BCA' },
     });
     const cb = await callback(app, JSON.parse(body), stubSignature(body));
     expect(cb.status).toBe(200);
@@ -103,13 +103,17 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
     const tiket = await prisma.tiket.findUnique({ where: { id } });
     expect(tiket?.statusPembayaran).toBe('PAID');
     const rekap = await prisma.rekap.findFirst({
-      where: { tiketId: id, status: 'SUCCESS', metodePembayaran: 'QRIS' },
+      where: { tiketId: id, status: 'SUCCESS', metodePembayaran: 'VIRTUAL_ACCOUNT_BCA' },
     });
     expect(rekap).toBeTruthy();
   });
 
   it('3. signature salah → 401 tanpa memproses (FR-3.2)', async () => {
-    const res = await callback(app, { reference: 'X', merchant_ref: 'TKT-99999', status: 'PAID' }, 'signature-ngawur');
+    const res = await callback(
+      app,
+      { transaction: { original_request_id: 'X', status: 'SUCCESS' }, order: { invoice_number: 'TKT-99999' } },
+      'signature-ngawur',
+    );
     expect(res.status).toBe(401);
     const tiket = await prisma.tiket.findUnique({ where: { id: 99999 } });
     expect(tiket).toBeNull();
@@ -119,7 +123,7 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
     const nim = `2406012${String(Math.floor(Math.random() * 9000) + 1000)}`;
     const created = await order(nim);
     const id = Number(created.body.merchantRef.split('-')[1]);
-    const body = JSON.stringify({ reference: 'E2E-TRX2', merchant_ref: `TKT-${id}`, status: 'PAID', payment_method: 'QRIS' });
+    const body = JSON.stringify({ transaction: { original_request_id: 'E2E-TRX2', status: 'SUCCESS' }, order: { invoice_number: `TKT-${id}` }, channel: { id: 'VIRTUAL_ACCOUNT_BCA' } });
     await callback(app, JSON.parse(body), stubSignature(body));
     await callback(app, JSON.parse(body), stubSignature(body)); // dobel
     const rekapCount = await prisma.rekap.count({ where: { tiketId: id, status: 'SUCCESS' } });
@@ -133,10 +137,9 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
       .set('Authorization', `Bearer ${superadminToken}`)
       .send({ namaPemberi: 'V E2E', nim: '1234567890', nomorHp: '081234567890', nominal: 100000 });
     expect(vch.status).toBe(201);
-    const body = JSON.stringify({ reference: 'E2E-VCH', merchant_ref: `VCH-${vch.body.kodeVoucher ? 900001 : 0}`, status: 'PAID' });
     // ambil id voucher dari kode
     const vRow = await prisma.voucher.findUnique({ where: { kodeVoucher: vch.body.kodeVoucher } });
-    const cbBody = JSON.stringify({ reference: 'E2E-VCH', merchant_ref: `VCH-${vRow!.id}`, status: 'PAID', payment_method: 'QRIS' });
+    const cbBody = JSON.stringify({ transaction: { original_request_id: 'E2E-VCH', status: 'SUCCESS' }, order: { invoice_number: `VCH-${vRow!.id}` }, channel: { id: 'VIRTUAL_ACCOUNT_BCA' } });
     await callback(app, JSON.parse(cbBody), stubSignature(cbBody));
     expect((await prisma.voucher.findUnique({ where: { id: vRow!.id } }))?.status).toBe('AKTIF');
 
@@ -147,7 +150,7 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
     // Decimal.toJSON memangkas nol di belakang ('0.00' → '0') — nilainya tetap nol persis
     expect(Number(ord.body.totalBayar)).toBe(0);
     expect(ord.body.statusPembayaran).toBe('PAID');
-    // tidak ada invoice Tripay
+    // tidak ada invoice DOKU
     const tRow = await prisma.tiket.findUnique({ where: { id: Number(ord.body.merchantRef.split('-')[1]) } });
     expect(tRow?.dokuInvoiceId).toBeNull();
     expect((await prisma.voucher.findUnique({ where: { id: vRow!.id } }))?.status).toBe('TERPAKAI');
@@ -162,7 +165,7 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
       .set('Authorization', `Bearer ${superadminToken}`)
       .send({ namaPemberi: 'V2 E2E', nim: '1234567890', nomorHp: '081234567890', nominal: 100000 });
     const vRow = await prisma.voucher.findUnique({ where: { kodeVoucher: vch.body.kodeVoucher } });
-    const cbBody = JSON.stringify({ reference: 'E2E-VCH2', merchant_ref: `VCH-${vRow!.id}`, status: 'PAID', payment_method: 'QRIS' });
+    const cbBody = JSON.stringify({ transaction: { original_request_id: 'E2E-VCH2', status: 'SUCCESS' }, order: { invoice_number: `VCH-${vRow!.id}` }, channel: { id: 'VIRTUAL_ACCOUNT_BCA' } });
     await callback(app, JSON.parse(cbBody), stubSignature(cbBody));
 
     const nim1 = `2406012${String(Math.floor(Math.random() * 9000) + 1000)}`;
@@ -187,7 +190,7 @@ describe('Ticketing IGATE — alur penuh (e2e)', () => {
     const nim = `2406012${String(Math.floor(Math.random() * 9000) + 1000)}`;
     const created = await order(nim);
     const id = Number(created.body.merchantRef.split('-')[1]);
-    const cbBody = JSON.stringify({ reference: 'E2E-TRX9', merchant_ref: `TKT-${id}`, status: 'PAID', payment_method: 'QRIS' });
+    const cbBody = JSON.stringify({ transaction: { original_request_id: 'E2E-TRX9', status: 'SUCCESS' }, order: { invoice_number: `TKT-${id}` }, channel: { id: 'VIRTUAL_ACCOUNT_BCA' } });
     await callback(app, JSON.parse(cbBody), stubSignature(cbBody));
     // tunggu fulfillment (worker inline via BullMQ)
     let qrToken: string | null = null;

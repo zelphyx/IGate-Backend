@@ -25,12 +25,11 @@ export const configuration = () => ({
   voucherMaxNominal: process.env.VOUCHER_MAX_NOMINAL ?? '10000000',
   eventDate: process.env.EVENT_DATE ? new Date(process.env.EVENT_DATE) : undefined,
 
-  tripay: {
-    mode: process.env.TRIPAY_MODE ?? 'sandbox',
-    apiKey: process.env.TRIPAY_API_KEY,
-    privateKey: process.env.TRIPAY_PRIVATE_KEY,
-    merchantCode: process.env.TRIPAY_MERCHANT_CODE,
-    channels: (process.env.TRIPAY_CHANNELS ?? 'QRIS').split(',').map((s) => s.trim()),
+  doku: {
+    mode: process.env.DOKU_MODE ?? 'sandbox',
+    clientId: process.env.DOKU_CLIENT_ID,
+    secretKey: process.env.DOKU_SECRET_KEY,
+    channels: (process.env.DOKU_CHANNELS ?? 'VIRTUAL_ACCOUNT_BCA').split(',').map((s) => s.trim()),
   },
 
   smtp: {

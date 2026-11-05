@@ -77,7 +77,7 @@ describe('PaymentsService (T5)', () => {
 
   describe('markTicketPaid — satu pintu lunas', () => {
     it('UNPAID → PAID: rekap SUCCESS dibuat + event ticket.paid terkirim', async () => {
-      const result = await service.markTicketPaid(5, 'QRIS', null, 'Callback Tripay ref=TRX123');
+      const result = await service.markTicketPaid(5, 'QRIS', null, 'Callback DOKU ref=TRX123');
       expect(result.processed).toBe(true);
       expect(tx.tiket.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'PAID' }) }),
@@ -130,14 +130,22 @@ describe('PaymentsService (T5)', () => {
     it('callback PAID → markTicketPaid dipanggil dengan metode channel', async () => {
       const spy = jest.spyOn(service, 'markTicketPaid').mockResolvedValue({ processed: true });
       await service.handleCallback(
-        JSON.stringify({ reference: 'TRX123', merchant_ref: 'TKT-5', status: 'PAID', payment_method: 'BRIVA' }),
+        JSON.stringify({
+          order: { invoice_number: 'TKT-5', amount: 100000 },
+          transaction: { status: 'SUCCESS', original_request_id: 'TRX123', date: '2024-01-01T00:00:00Z' },
+          channel: { id: 'VIRTUAL_ACCOUNT_BRI' },
+        }),
       );
-      expect(spy).toHaveBeenCalledWith(5, 'BRIVA', null, expect.stringContaining('TRX123'));
+      expect(spy).toHaveBeenCalledWith(5, 'VIRTUAL_ACCOUNT_BRI', null, expect.stringContaining('TRX123'));
     });
 
     it('callback EXPIRED → tiket EXPIRED + rekap FAILED', async () => {
       const result = await service.handleCallback(
-        JSON.stringify({ reference: 'TRX123', merchant_ref: 'TKT-5', status: 'EXPIRED', payment_method: 'QRIS' }),
+        JSON.stringify({
+          order: { invoice_number: 'TKT-5', amount: 100000 },
+          transaction: { status: 'EXPIRED', original_request_id: 'TRX123' },
+          channel: { id: 'VIRTUAL_ACCOUNT_BCA' },
+        }),
       );
       expect(result.success).toBe(true);
       expect(prisma.tiket.updateMany).toHaveBeenCalledWith(
@@ -150,7 +158,7 @@ describe('PaymentsService (T5)', () => {
 
     it('merchant_ref tak dikenal → diabaikan, tetap 200', async () => {
       const result = await service.handleCallback(
-        JSON.stringify({ reference: 'X', merchant_ref: 'ABC-99', status: 'PAID' }),
+        JSON.stringify({ order: { invoice_number: 'ABC-99' }, transaction: { status: 'SUCCESS' } }),
       );
       expect(result.success).toBe(true);
       expect(events.emit).not.toHaveBeenCalled();
@@ -158,10 +166,14 @@ describe('PaymentsService (T5)', () => {
 
     it('prefix VCH → diteruskan ke VouchersService.markVoucherPaid (T7)', async () => {
       const result = await service.handleCallback(
-        JSON.stringify({ reference: 'X', merchant_ref: 'VCH-1', status: 'PAID', payment_method: 'QRIS' }),
+        JSON.stringify({
+          order: { invoice_number: 'VCH-1', amount: 50000 },
+          transaction: { status: 'SUCCESS', original_request_id: 'X' },
+          channel: { id: 'VIRTUAL_ACCOUNT_BCA' },
+        }),
       );
       expect(result.success).toBe(true);
-      expect(vouchers.markVoucherPaid).toHaveBeenCalledWith(1, 'QRIS', expect.stringContaining('X'));
+      expect(vouchers.markVoucherPaid).toHaveBeenCalledWith(1, 'VIRTUAL_ACCOUNT_BCA', expect.stringContaining('X'));
     });
 
     it('tiket ber-voucher → rekap keterangan format baku harga/voucher/dibayar (FR-7.1a)', async () => {
@@ -174,7 +186,7 @@ describe('PaymentsService (T5)', () => {
         nilaiVoucher: { toString: () => '50000.00' },
         status: 'AKTIF',
       });
-      await service.markTicketPaid(5, 'QRIS', null, 'Callback Tripay ref=TRX123');
+      await service.markTicketPaid(5, 'QRIS', null, 'Callback DOKU ref=TRX123');
       expect(tx.voucher.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({ data: { status: 'TERPAKAI' } }),
       );

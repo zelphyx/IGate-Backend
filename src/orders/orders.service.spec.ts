@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma/prisma.module';
 import { DiscordService } from '../discord/discord.service';
 import { PaymentsService } from '../payments/payments.service';
 import { VouchersService } from '../vouchers/vouchers.service';
-import { TripayClient } from '../payments/tripay/tripay.types';
+import { DokuClient } from '../payments/doku/doku.types';
 import { TICKET_PAYMENT_STATUS } from '../common/constants';
 
 // @nestjs/event-emitter ESM — di-mock menjadi kelas CJS biasa untuk DI (ts-jest hoist jest.mock)
@@ -18,7 +18,7 @@ describe('OrdersService (T4+T8)', () => {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   let tx: any;
   let prisma: any;
-  let tripay: { createTransaction: jest.Mock; getTransactionDetail: jest.Mock };
+  let doku: { createTransaction: jest.Mock; getTransactionDetail: jest.Mock };
   let discord: { logInfo: jest.Mock; logWarn: jest.Mock; notifyStock: jest.Mock };
   let events: { emit: jest.Mock };
   let payments: { markTicketPaid: jest.Mock };
@@ -29,7 +29,7 @@ describe('OrdersService (T4+T8)', () => {
     ticketPrice: '100000',
     maxTickets: 2,
     paymentExpiryMinutes: 360,
-    'tripay.channels': ['QRIS'],
+    'doku.channels': ['VIRTUAL_ACCOUNT_BCA'],
   };
 
   const validDto = {
@@ -57,11 +57,11 @@ describe('OrdersService (T4+T8)', () => {
       $transaction: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn(tx)),
       tiket: { findUnique: jest.fn() },
     };
-    tripay = {
+    doku = {
       createTransaction: jest.fn().mockResolvedValue({
         reference: 'TRX123',
         merchantRef: 'TKT-7',
-        checkoutUrl: 'https://tripay.test/TKT-7',
+        checkoutUrl: 'https://doku.test/TKT-7',
         amount: 100000,
         expiredAt: new Date(),
       }),
@@ -77,7 +77,7 @@ describe('OrdersService (T4+T8)', () => {
         OrdersService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: (k: string) => CONFIG[k] } },
-        { provide: 'TripayClient', useValue: tripay },
+        { provide: 'DokuClient', useValue: doku },
         { provide: DiscordService, useValue: discord },
         { provide: EventEmitter2, useValue: events },
         { provide: PaymentsService, useValue: payments },
@@ -126,16 +126,16 @@ describe('OrdersService (T4+T8)', () => {
     expect(result.tiket.statusPembayaran).toBe(TICKET_PAYMENT_STATUS.UNPAID);
     expect(result.tiket.angkatan).toBe(2024);
     expect(result.tiket.dokuInvoiceId).toBe('TRX123');
-    expect(tripay.createTransaction).toHaveBeenCalledWith(
+    expect(doku.createTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ merchantRef: 'TKT-7', amount: 100000 }),
     );
     expect(events.emit).toHaveBeenCalledWith('order.created', { tiketId: 7 });
     expect(discord.logInfo).toHaveBeenCalledWith('ORDER_DIBUAT', expect.objectContaining({ ref: 'TKT-7' }));
   });
 
-  it('Tripay gagal → tiket FAILED + logWarn, lalu 502 TRIPAY_GAGAL', async () => {
-    tripay.createTransaction.mockRejectedValue(new Error('network down'));
-    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'TRIPAY_GAGAL' } });
+  it('DOKU gagal → tiket FAILED + logWarn, lalu 502 DOKU_GAGAL', async () => {
+    doku.createTransaction.mockRejectedValue(new Error('network down'));
+    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'DOKU_GAGAL' } });
     expect(tx.tiket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'FAILED' }) }),
     );
@@ -160,7 +160,7 @@ describe('OrdersService (T4+T8)', () => {
     });
   });
 
-  it('voucher 50k / tiket 100k → diskon 50k, bayar 50k, invoice Tripay senilai 50k', async () => {
+  it('voucher 50k / tiket 100k → diskon 50k, bayar 50k, invoice DOKU senilai 50k', async () => {
     vouchers.validateForPurchase.mockResolvedValue({
       voucher: { id: 1, kodeVoucher: 'IGATE-ABCD-2345', nilaiVoucher: '50000', status: 'AKTIF' },
       diskon: '50000',
@@ -169,7 +169,7 @@ describe('OrdersService (T4+T8)', () => {
     expect(result.tiket.diskon).toBe('50000.00');
     expect(result.tiket.totalBayar).toBe('50000.00');
     expect(result.tiket.kodeVoucher).toBe('IGATE-ABCD-2345');
-    expect(tripay.createTransaction).toHaveBeenCalledWith(
+    expect(doku.createTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 50000 }),
     );
     expect(payments.markTicketPaid).not.toHaveBeenCalled();
@@ -187,7 +187,7 @@ describe('OrdersService (T4+T8)', () => {
     prisma.tiket.findUnique.mockResolvedValue(created);
     const result = await service.create({ ...validDto, kodeVoucher: 'IGATE-FULL-2345' });
     expect(result.tiket.totalBayar).toBe('0.00');
-    expect(tripay.createTransaction).not.toHaveBeenCalled();
+    expect(doku.createTransaction).not.toHaveBeenCalled();
     expect(payments.markTicketPaid).toHaveBeenCalledWith(
       7,
       'VOUCHER',

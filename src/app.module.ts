@@ -13,7 +13,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { DiscordModule } from './discord/discord.module';
-import { TripayModule } from './payments/tripay/tripay.module';
+import { DokuModule } from './payments/doku/doku.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FulfillmentModule } from './fulfillment/fulfillment.module';
@@ -55,7 +55,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     AuthModule,
     AdminModule,
     DiscordModule,
-    TripayModule,
+    DokuModule,
     OrdersModule,
     PaymentsModule,
     VouchersModule,

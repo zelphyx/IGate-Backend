@@ -48,7 +48,7 @@ export const REKAP_STATUS = {
   FAILED: 'FAILED',
 } as const;
 
-/** Prefix merchant_ref Tripay */
+/** Prefix invoice_number DOKU (= kolom dokuInvoiceId) */
 export const MERCHANT_REF_PREFIX = {
   TIKET: 'TKT-',
   VOUCHER: 'VCH-',
