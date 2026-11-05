@@ -47,7 +47,7 @@ export class OrdersService {
     const nimRegex = this.config.get<RegExp>('nimRegex')!;
     if (!nimRegex.test(dto.nim)) {
       throw new HttpException(
-        { statusCode: 422, code: 'NIM_TIDAK_VALID', message: 'NIM harus diawali 2406012 (BR-02).' },
+        { statusCode: 422, code: 'NIM_TIDAK_VALID', message: 'NIM harus berupa angka 10–20 digit.' },
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
