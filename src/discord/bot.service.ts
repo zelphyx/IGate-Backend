@@ -228,22 +228,25 @@ export class BotService implements OnModuleDestroy {
     return `**STOK**\n• Terpakai: ${used}\n• Sisa: ${Math.max(max - used, 0)} / ${max}`;
   }
 
-  /** PII dimasking (FR-8.3). */
+  /** PII dimasking (FR-8.3). Kunci: TKT-{id}, id, NIM, atau kode tiket IGATE-XXXXXX. */
   private async renderCekTiket(kunci: string): Promise<string> {
     let tiket = null;
-    const refMatch = kunci.match(new RegExp(`^${MERCHANT_REF_PREFIX.TIKET}(\\d+)$`));
+    const kunciBersih = kunci.trim().toUpperCase();
+    const refMatch = kunciBersih.match(new RegExp(`^${MERCHANT_REF_PREFIX.TIKET}(\\d+)$`));
     if (refMatch) {
       tiket = await this.prisma.tiket.findUnique({ where: { id: Number(refMatch[1]) } });
-    } else if (/^\d+$/.test(kunci)) {
-      const byId = await this.prisma.tiket.findUnique({ where: { id: Number(kunci) } });
-      const byNim = await this.prisma.tiket.findFirst({ where: { nim: kunci } });
+    } else if (/^IGATE-[0-9A-HJKMNP-Z]{6}$/.test(kunciBersih)) {
+      tiket = await this.prisma.tiket.findUnique({ where: { kodeTiket: kunciBersih } });
+    } else if (/^\d+$/.test(kunciBersih)) {
+      const byId = await this.prisma.tiket.findUnique({ where: { id: Number(kunciBersih) } });
+      const byNim = await this.prisma.tiket.findFirst({ where: { nim: kunciBersih } });
       tiket = byId ?? byNim;
     } else {
-      tiket = await this.prisma.tiket.findFirst({ where: { nim: kunci } });
+      tiket = await this.prisma.tiket.findFirst({ where: { nim: kunciBersih } });
     }
     if (!tiket) return `Tiket untuk "${kunci}" tidak ditemukan.`;
     return [
-      `**TIKET-${tiket.id}**`,
+      `**${tiket.kodeTiket}** (TKT-${tiket.id})`,
       `• Nama: ${tiket.nama}`,
       `• NIM: ${maskNim(tiket.nim)}`,
       `• Email: ${maskEmail(tiket.email)}`,

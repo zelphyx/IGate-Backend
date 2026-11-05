@@ -61,7 +61,7 @@ export class FulfillmentProcessor extends WorkerHost {
     const qrPng = await this.qr.toPngBuffer(tiket.qrToken!);
     const pdf = await this.pdf.buildTicketPdf(tiket, qrPng, merchantRef);
     await this.pdf.saveTicketPdf(tiket.id, pdf);
-    await this.mail.sendTicketMail(tiket, merchantRef, pdf);
+    await this.mail.sendTicketMail(tiket, merchantRef, pdf, qrPng);
 
     await this.prisma.tiket.updateMany({
       where: { id: tiketId, statusTiket: { not: TICKET_STATUS.CHECKED_IN } },

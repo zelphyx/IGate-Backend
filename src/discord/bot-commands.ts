@@ -21,9 +21,16 @@ export const BOT_COMMANDS: BotCommandDef[] = [
   { name: 'stok', description: 'Sisa kuota tiket', access: 'panitia' },
   {
     name: 'cek-tiket',
-    description: 'Cari tiket berdasarkan NIM / ref / id (PII dimasking)',
+    description: 'Cari tiket berdasarkan kode IGATE-xxxxxx / NIM / TKT-x (PII dimasking)',
     access: 'panitia',
-    options: [{ name: 'kunci', description: 'NIM, TKT-x, atau id tiket', required: true, type: 'string' }],
+    options: [
+      {
+        name: 'kunci',
+        description: 'Kode tiket (IGATE-xxxxxx), NIM, TKT-x, atau id tiket',
+        required: true,
+        type: 'string',
+      },
+    ],
   },
   {
     name: 'cek-voucher',

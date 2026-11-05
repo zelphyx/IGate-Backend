@@ -11,6 +11,7 @@ import {
 } from '../common/constants';
 import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
 import { isZeroMoney, minMoney, subMoney } from '../common/utils/money';
+import { generateKodeTiket } from '../common/utils/kode-tiket';
 import { DiscordService } from '../discord/discord.service';
 import { DokuClient, DokuError } from '../payments/doku/doku.types';
 import { PaymentsService } from '../payments/payments.service';
@@ -131,6 +132,8 @@ export class OrdersService {
             nomorHp: dto.nomorHp,
             email: dto.email.toLowerCase(),
             hargaTiket: harga,
+            // Kode tampilan unik — collision acak 6 char ditangani retry di bawah (P2002 kode_tiket).
+            kodeTiket: generateKodeTiket(),
             kodeVoucher: voucherInfo?.kode ?? null,
             diskon,
             totalBayar,
@@ -171,6 +174,13 @@ export class OrdersService {
       });
     } catch (err) {
       if (err instanceof HttpException) throw err; // validasi/konflik → rollback normal
+      // Collision kode tampilan acak (P2002 pada kode_tiket) → coba ulang sekali
+      if (
+        (err as { code?: string })?.code === 'P2002' &&
+        (err as { meta?: { target?: string[] } })?.meta?.target?.includes('kode_tiket')
+      ) {
+        return this.create(dto);
+      }
       throw err;
     }
 
