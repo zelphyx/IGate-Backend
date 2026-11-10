@@ -161,7 +161,7 @@ export class OrdersService {
           });
           return await tx.tiket.update({
             where: { id: tiket.id },
-            data: { dokuInvoiceId: trx.reference },
+            data: { dokuInvoiceId: trx.reference, dokuCheckoutUrl: trx.checkoutUrl },
           });
         } catch {
           // DOKU gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
@@ -206,7 +206,8 @@ export class OrdersService {
 
     const instruksiBayar = {
       channel: channels[0],
-      checkoutUrl: `/api/v1/orders/${MERCHANT_REF_PREFIX.TIKET}${created.id}`, // status-page ambil detail live
+      checkoutUrl:
+        created.dokuCheckoutUrl ?? `/api/v1/orders/${MERCHANT_REF_PREFIX.TIKET}${created.id}`, // fallback ke status-page
       expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
     };
 
@@ -235,14 +236,16 @@ export class OrdersService {
     return tiket;
   }
 
-  /** Detail DOKU live untuk instruksi bayar di halaman cek status (FR-2.5). */
+  /** Detail DOKU live untuk instruksi bayar di halaman cek status (FR-2.5).
+   *  Checkout URL DOKU tidak bisa di-re-fetch dari Check Status API — diambil dari kolom
+   *  yang di-persist saat create (doku_checkout_url); status tetap live dari DOKU. */
   async getLiveInstruction(tiket: Tiket): Promise<{ checkoutUrl?: string }> {
     if (!tiket.dokuInvoiceId) return {};
     try {
       const detail = await this.doku.getTransactionDetail(tiket.dokuInvoiceId);
-      return { checkoutUrl: detail.checkoutUrl };
+      return { checkoutUrl: tiket.dokuCheckoutUrl ?? detail.checkoutUrl };
     } catch {
-      return {};
+      return tiket.dokuCheckoutUrl ? { checkoutUrl: tiket.dokuCheckoutUrl } : {};
     }
   }
 

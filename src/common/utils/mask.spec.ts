@@ -17,7 +17,7 @@ describe('mask utils (PRD §12.6)', () => {
     expect(maskPhone('081')).toBe('***');
   });
 
-  it('maskNim: 2406012*** (prefix tetap terlihat)', () => {
-    expect(maskNim('2406012123')).toBe('2406012***');
+  it('maskNim: NIM utuh (tidak dimask, kebutuhan panitia)', () => {
+    expect(maskNim('2406012123')).toBe('2406012123');
   });
 });

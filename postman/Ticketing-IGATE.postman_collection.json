@@ -129,7 +129,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"nama\": \"Budi Santoso\",\n  \"nim\": \"2406012123\",\n  \"nomorHp\": \"081234567890\",\n  \"email\": \"budi@mail.id\",\n  \"kodeVoucher\": \"\"\n}"
+              "raw": "{\n  \"nama\": \"Budi Santoso\",\n  \"nim\": \"12345678901234567890\",\n  \"nomorHp\": \"081234567890\",\n  \"email\": \"budi@mail.id\",\n  \"kodeVoucher\": \"\"\n}"
             },
             "url": "{{baseUrl}}/orders",
             "description": "Rate limit 5/menit/IP. `kodeVoucher` opsional — hapus barisnya kalau tidak pakai voucher. NIM wajib diawali 2406012."
@@ -282,7 +282,7 @@
             "header": [{ "key": "Content-Type", "value": "application/json" }],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"namaPemberi\": \"Sponsor ABC\",\n  \"nim\": \"1234567890\",\n  \"nomorHp\": \"081234567890\",\n  \"nominal\": 100000\n}"
+              "raw": "{\n  \"namaPemberi\": \"Sponsor ABC\",\n  \"nim\": \"12345678901234567890\",\n  \"nomorHp\": \"081234567890\",\n  \"nominal\": 100000\n}"
             },
             "url": "{{baseUrl}}/admin/vouchers",
             "description": "Membuat voucher PENDING + invoice DOKU VCH-{id}. Nominal harus dalam rentang VOUCHER_MIN/MAX_NOMINAL (BR-06)."

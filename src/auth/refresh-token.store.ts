@@ -10,10 +10,11 @@ import Redis from 'ioredis';
 @Injectable()
 export class RefreshTokenStore implements OnModuleDestroy {
   private readonly redis: Redis;
-  private readonly ttlSeconds = 7 * 24 * 60 * 60;
+  private readonly ttlSeconds: number;
 
   constructor(config: ConfigService) {
     this.redis = new Redis(config.getOrThrow<string>('redisUrl'));
+    this.ttlSeconds = parseDuration(config.get<string>('jwtRefreshExpiresIn') ?? '7d');
   }
 
   private static hash(token: string): string {
@@ -39,4 +40,14 @@ export class RefreshTokenStore implements OnModuleDestroy {
   async onModuleDestroy(): Promise<void> {
     this.redis.disconnect();
   }
+}
+
+/** Parse string durasi ms-style JWT ('12h', '7d', '900s') → detik. */
+export function parseDuration(value: string): number {
+  const match = value.match(/^(\d+)\s*(ms|s|m|h|d)?$/i);
+  if (!match) return 7 * 24 * 60 * 60;
+  const n = parseInt(match[1], 10);
+  const unit = (match[2] ?? 's').toLowerCase();
+  const mult = { ms: 0.001, s: 1, m: 60, h: 3600, d: 86400 }[unit]!;
+  return Math.max(1, Math.round(n * mult));
 }

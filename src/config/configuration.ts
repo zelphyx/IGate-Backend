@@ -14,8 +14,8 @@ export const configuration = () => ({
 
   jwtSecret: process.env.JWT_SECRET,
   jwtRefreshSecret: process.env.JWT_REFRESH_SECRET,
-  jwtExpiresIn: '15m',
-  jwtRefreshExpiresIn: '7d',
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '12h',
+  jwtRefreshExpiresIn: process.env.JWT_REFRESH_EXPIRES_IN ?? '7d',
 
   ticketPrice: process.env.TICKET_PRICE ?? '0',
   maxTickets: parseInt(process.env.MAX_TICKETS ?? '0', 10),

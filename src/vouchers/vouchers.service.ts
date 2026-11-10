@@ -80,6 +80,7 @@ export class VouchersService {
 
     let voucher: Voucher;
     let reference: string;
+    let checkoutUrl = '';
     try {
       const trx = await this.prisma.$transaction(async (tx) => {
         // retry kode bentrok (unique) maksimal 5x
@@ -113,10 +114,11 @@ export class VouchersService {
           method: channels[0],
           orderItemName: `Voucher IGATE ${created.kodeVoucher}`,
         });
-        return { created, trx };
+        return { created, trx, checkoutUrl: trx.checkoutUrl };
       });
       voucher = trx.created;
       reference = trx.trx.reference;
+      checkoutUrl = trx.checkoutUrl;
     } catch (err) {
       if (err instanceof HttpException) throw err;
       this.logger.error(`createTransaction voucher gagal: ${(err as Error).message}`);
@@ -132,7 +134,7 @@ export class VouchersService {
 
     await this.prisma.voucher.update({
       where: { id: voucher.id },
-      data: { dokuInvoiceId: reference },
+      data: { dokuInvoiceId: reference, dokuCheckoutUrl: checkoutUrl || null },
     });
 
     this.discord.logInfo('VOUCHER_DIBUAT', {
@@ -149,7 +151,7 @@ export class VouchersService {
       nominal: dto.nominal,
       instruksiBayar: {
         channel: channels[0],
-        checkoutUrl: reference ? `doku:${reference}` : '',
+        checkoutUrl,
         expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
       },
     };

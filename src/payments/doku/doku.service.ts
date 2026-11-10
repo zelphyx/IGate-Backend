@@ -95,9 +95,9 @@ export class DokuLiveService implements DokuClient {
       '/checkout/v1/payment',
       { method: 'POST', body: JSON.stringify(body) },
     );
-    const response = (data['response'] ?? {}) as Record<string, unknown>;
-    const order = (response['order'] ?? {}) as Record<string, unknown>;
-    const payment = (response['payment'] ?? {}) as Record<string, unknown>;
+    // request<T> sudah unwrap json.response — data adalah object response langsung
+    const order = (data['order'] ?? {}) as Record<string, unknown>;
+    const payment = (data['payment'] ?? {}) as Record<string, unknown>;
     const expiredRaw = String(payment['expired_date'] ?? '');
     // expired_date DOKU: YYYYMMDDHHmmss (WIB) — hanya dipakai fallback; sweep memakai timer lokal.
     const expiredAt = expiredRaw.match(/^\d{14}$/)
@@ -131,6 +131,8 @@ export class DokuLiveService implements DokuClient {
       `/orders/v1/status/${encodeURIComponent(reference)}`,
       { method: 'GET' },
     );
+    // request<T> sudah unwrap json.response — data adalah object response langsung
+    // (fallback `data['response'] ?? data` untuk API yang bentuknya beda)
     const response = (data['response'] ?? data) as Record<string, unknown>;
     const transaction = (response['transaction'] ?? {}) as Record<string, unknown>;
     const order = (response['order'] ?? {}) as Record<string, unknown>;

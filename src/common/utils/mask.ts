@@ -11,7 +11,11 @@ export function maskPhone(phone: string): string {
   return `${phone.slice(0, 4)}****${phone.slice(-3)}`;
 }
 
+/**
+ * NIM tidak dimask untuk log Discord: panitia butuh NIM utuh untuk
+ * cross-check peserta saat check-in/manual fulfillment (keputusan panitia).
+ * NIM bukan rahasia sekelas password — hanya jangan tampilkan PII lain utuh.
+ */
 export function maskNim(nim: string): string {
-  if (nim.length <= 7) return '***';
-  return `${nim.slice(0, 7)}***`;
+  return nim;
 }
