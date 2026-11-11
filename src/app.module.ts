@@ -22,6 +22,7 @@ import { CheckinModule } from './checkin/checkin.module';
 import { RekapStatsModule } from './rekap/rekap-stats.module';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
+import { buildThrottlerOptions } from './common/throttler.config';
 
 @Module({
   imports: [
@@ -39,8 +40,9 @@ import { RolesGuard } from './common/guards/roles.guard';
         autoLogging: { ignore: (req) => req.url === '/api/v1/health' },
       },
     }),
-    ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60_000, limit: 60 }],
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: buildThrottlerOptions,
     }),
     BullModule.forRootAsync({
       inject: [ConfigService],
