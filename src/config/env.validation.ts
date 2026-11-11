@@ -15,6 +15,8 @@ export const envValidationSchema = Joi.object({
   REDIS_URL: Joi.string().required(),
   STORAGE_DIR: Joi.string().allow('').optional(),
   CORS_ORIGINS: Joi.string().allow('').optional(),
+  // true hanya bila origin cuma bisa dijangkau dari Cloudflare (lihat common/utils/client-ip.ts).
+  TRUST_CF_CONNECTING_IP: Joi.boolean().default(false),
 
   JWT_SECRET: Joi.string().min(32).required(),
   JWT_REFRESH_SECRET: Joi.string().min(32).required(),
