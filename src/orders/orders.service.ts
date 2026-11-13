@@ -44,8 +44,8 @@ export class OrdersService {
   ) {}
 
   async create(dto: CreateOrderDto): Promise<OrderResult> {
-    const nimRegex = this.config.get<RegExp>('nimRegex')!;
-    if (!nimRegex.test(dto.nim)) {
+    // NIM 10–20 digit angka (keputusan panitia 2026-11: prefix 2406012 tidak lagi diwajibkan).
+    if (!/^\d{10,20}$/.test(dto.nim)) {
       throw new HttpException(
         { statusCode: 422, code: 'NIM_TIDAK_VALID', message: 'NIM harus berupa angka 10–20 digit.' },
         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -128,7 +128,7 @@ export class OrdersService {
           data: {
             nama: dto.nama,
             nim: dto.nim,
-            angkatan: 2000 + parseInt(dto.nim.slice(0, 2), 10),
+            angkatan: dto.angkatan ?? 2000 + parseInt(dto.nim.slice(0, 2), 10),
             nomorHp: dto.nomorHp,
             email: dto.email.toLowerCase(),
             hargaTiket: harga,

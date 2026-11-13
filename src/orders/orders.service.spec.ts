@@ -87,10 +87,16 @@ describe('OrdersService (T4+T8)', () => {
     service = moduleRef.get(OrdersService);
   });
 
-  it('NIM tidak diawali 2406012 → 422 NIM_TIDAK_VALID (BR-02)', async () => {
-    await expect(service.create({ ...validDto, nim: '2306012123' })).rejects.toMatchObject({
+  it('NIM bukan 10–20 digit angka → 422 NIM_TIDAK_VALID', async () => {
+    await expect(service.create({ ...validDto, nim: '2306012ab1' })).rejects.toMatchObject({
       response: { code: 'NIM_TIDAK_VALID' },
     });
+    await expect(service.create({ ...validDto, nim: '123456789' })).rejects.toMatchObject({
+      response: { code: 'NIM_TIDAK_VALID' },
+    });
+    await expect(
+      service.create({ ...validDto, nim: '123456789012345678901' }),
+    ).rejects.toMatchObject({ response: { code: 'NIM_TIDAK_VALID' } });
   });
 
   it('NIM format benar tapi panjang salah → 422', async () => {

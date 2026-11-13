@@ -1,5 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEmail, IsNotEmpty, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { Type } from 'class-transformer';
+import {
+  IsEmail,
+  IsInt,
+  IsNotEmpty,
+  IsOptional,
+  IsString,
+  Matches,
+  Max,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class CreateOrderDto {
   @ApiProperty({ example: 'Budi' })
@@ -8,10 +19,11 @@ export class CreateOrderDto {
   @MaxLength(100)
   nama!: string;
 
-  @ApiProperty({ example: '2406012123001', description: 'Harus diawali 2406012 (BR-02)' })
+  @ApiProperty({ example: '2406012123001', description: 'NIM 10–20 digit angka (disetujui panitia)' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(30)
+  @Matches(/^\d{10,20}$/, { message: 'nim harus 10–20 digit angka.' })
+  @MaxLength(20)
   nim!: string;
 
   @ApiProperty({ example: '081234567890' })
@@ -24,6 +36,17 @@ export class CreateOrderDto {
   @IsEmail()
   @MaxLength(150)
   email!: string;
+
+  @ApiPropertyOptional({
+    example: 2026,
+    description: 'Opsional — tahun angkatan (2000–2100). Default: diambil dari 2 digit awal NIM.',
+  })
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  angkatan?: number;
 
   @ApiPropertyOptional({ example: 'IGATE-ABCD-1234', description: 'Opsional — voucher diskon' })
   @IsOptional()

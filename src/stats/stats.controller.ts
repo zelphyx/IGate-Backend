@@ -16,4 +16,14 @@ export class StatsController {
   async getStats() {
     return this.stats.getStats();
   }
+
+  @Get('angkatan-2026')
+  @Roles(ROLES.ADMIN, ROLES.SUPERADMIN)
+  @ApiBearerAuth()
+  @ApiOperation({
+    summary: 'Progress "punishment" angkatan 2026: % yang beli tiket & % yang hadir',
+  })
+  async angkatan2026() {
+    return this.stats.angkatanProgress(2026);
+  }
 }

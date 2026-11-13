@@ -24,6 +24,8 @@ export const configuration = () => ({
   voucherMinNominal: process.env.VOUCHER_MIN_NOMINAL ?? '10000',
   voucherMaxNominal: process.env.VOUCHER_MAX_NOMINAL ?? '10000000',
   eventDate: process.env.EVENT_DATE ? new Date(process.env.EVENT_DATE) : undefined,
+  /** Jumlah resmi mahasiswa angkatan 2026 — penyebut persen progress "punishment" (0 = nonaktif). */
+  angkatan2026Total: parseInt(process.env.ANGKATAN_2026_TOTAL ?? '0', 10),
 
   doku: {
     mode: process.env.DOKU_MODE ?? 'sandbox',

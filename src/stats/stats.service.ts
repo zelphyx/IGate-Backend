@@ -17,6 +17,17 @@ export interface StatsResult {
   pendapatan: { total: string; hariIni: string };
   sisaKuota: number;
   voucher: { aktif: number; terpakai: number };
+  perAngkatan: PerAngkatanRow[];
+}
+
+export interface PerAngkatanRow {
+  angkatan: number;
+  /** Tiket dengan statusPembayaran UNPAID/PAID/ISSUED/CHECKED_IN (order aktif, termasuk belum lunas). */
+  terdaftar: number;
+  /** Tiket lunas (PAID/ISSUED/CHECKED_IN). */
+  lunas: number;
+  /** Tiket sudah check-in. */
+  hadir: number;
 }
 
 /** Tanggal awal hari ini menurut zona Asia/Jakarta (+07:00). */
@@ -89,6 +100,81 @@ export class StatsService {
       pendapatan: { total: fmt(rekapTotal._sum.nominal), hariIni: fmt(rekapHariIni._sum.nominal) },
       sisaKuota: Math.max(maxTickets - used, 0),
       voucher: { aktif: voucherAktif, terpakai: voucherTerpakai },
+      perAngkatan: await this.perAngkatan(),
+    };
+  }
+
+  /** Breakdown per angkatan: terdaftar (order aktif), lunas, hadir — untuk progress bar dashboard. */
+  private async perAngkatan(): Promise<PerAngkatanRow[]> {
+    const rows = await this.prisma.tiket.groupBy({
+      by: ['angkatan'],
+      where: { statusPembayaran: { notIn: [TICKET_PAYMENT_STATUS.EXPIRED, TICKET_PAYMENT_STATUS.FAILED, TICKET_PAYMENT_STATUS.CANCELED] } },
+      _count: { _all: true },
+      orderBy: { angkatan: 'asc' },
+    });
+    // Lunas = statusPembayaran PAID (ISSUED/CHECKED_IN selalu mengikuti PAID di alur normal).
+    const lunasRows = await this.prisma.tiket.groupBy({
+      by: ['angkatan'],
+      where: { statusPembayaran: { in: [TICKET_PAYMENT_STATUS.PAID] } },
+      _count: { _all: true },
+    });
+    const hadirRows = await this.prisma.tiket.groupBy({
+      by: ['angkatan'],
+      where: { statusTiket: TICKET_STATUS.CHECKED_IN },
+      _count: { _all: true },
+    });
+    const lunasMap = new Map(lunasRows.map((r) => [r.angkatan, r._count._all]));
+    const hadirMap = new Map(hadirRows.map((r) => [r.angkatan, r._count._all]));
+    return rows.map((r) => ({
+      angkatan: r.angkatan,
+      terdaftar: r._count._all,
+      lunas: lunasMap.get(r.angkatan) ?? 0,
+      hadir: hadirMap.get(r.angkatan) ?? 0,
+    }));
+  }
+
+  /**
+   * Progress "punishment" per angkatan (dipakai khusus 2026): dari total mahasiswa angkatan
+   * tsb, berapa % yang sudah beli tiket (lunas) & berapa % yang sudah check-in.
+   * % dihitung terhadap totalAnggota (jumlah resmi angkatan, mis. 234) — bukan terhadap
+   * pendaftar — sehingga progress bar tidak pernah 100% sebelum semua anggota hadir.
+   */
+  async angkatanProgress(
+    angkatan: number,
+    totalAnggota?: number,
+  ): Promise<{
+    angkatan: number;
+    totalAnggota: number;
+    terdaftar: number;
+    lunas: number;
+    hadir: number;
+    persenBeli: number;
+    persenHadir: number;
+    sisaBelumBeli: number;
+    sisaBelumHadir: number;
+  }> {
+    const configTotal = this.config.get<number>('angkatan2026Total') ?? 0;
+    const total = totalAnggota ?? (configTotal > 0 ? configTotal : 0);
+    const whereAktif = {
+      angkatan,
+      statusPembayaran: { notIn: [TICKET_PAYMENT_STATUS.EXPIRED, TICKET_PAYMENT_STATUS.FAILED, TICKET_PAYMENT_STATUS.CANCELED] },
+    };
+    const [terdaftar, lunas, hadir] = await this.prisma.$transaction([
+      this.prisma.tiket.count({ where: whereAktif }),
+      this.prisma.tiket.count({ where: { angkatan, statusPembayaran: TICKET_PAYMENT_STATUS.PAID } }),
+      this.prisma.tiket.count({ where: { angkatan, statusTiket: TICKET_STATUS.CHECKED_IN } }),
+    ]);
+    const pct = (n: number) => (total > 0 ? Math.round((n / total) * 1000) / 10 : 0);
+    return {
+      angkatan,
+      totalAnggota: total,
+      terdaftar,
+      lunas,
+      hadir,
+      persenBeli: pct(lunas),
+      persenHadir: pct(hadir),
+      sisaBelumBeli: Math.max(total - lunas, 0),
+      sisaBelumHadir: Math.max(total - hadir, 0),
     };
   }
 }
