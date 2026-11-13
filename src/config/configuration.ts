@@ -8,6 +8,7 @@ export const configuration = () => ({
     .map((s) => s.trim())
     .filter(Boolean),
   storageDir: process.env.STORAGE_DIR ?? 'storage',
+  trustCfConnectingIp: String(process.env.TRUST_CF_CONNECTING_IP ?? 'false').toLowerCase() === 'true',
 
   databaseUrl: process.env.DATABASE_URL,
   redisUrl: process.env.REDIS_URL,
