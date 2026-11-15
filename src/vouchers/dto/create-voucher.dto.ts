@@ -15,9 +15,9 @@ export class CreateVoucherDto {
   @MaxLength(100)
   namaPemberi!: string;
 
-  /** NIM pemberi cukup format 10–11 digit (keputusan A-8: bebas prefix). */
+  /** NIM pemberi (mahasiswa) — 14 digit (keputusan panitia 2026-11). */
   @IsString()
-  @Matches(/^\d{10,11}$/, { message: 'nim harus 10–11 digit.' })
+  @Matches(/^\d{14}$/, { message: 'nim harus 14 digit.' })
   nim!: string;
 
   @IsString()

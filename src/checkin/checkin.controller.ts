@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Post, Query, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { IsISO8601, IsOptional, IsString, MaxLength } from 'class-validator';
+import { IsISO8601, IsInt, IsOptional, IsString, MaxLength, Max, Min } from 'class-validator';
 import { Type } from 'class-transformer';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ROLES } from '../common/constants';
@@ -22,10 +22,25 @@ export class ListCheckinsQuery {
   @IsISO8601()
   to?: string;
 
+  /** Tahun angkatan penuh, mis. 2024 (format persis: 4 digit). */
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  angkatan?: number;
+
+  @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
   page?: number = 1;
 
   @IsOptional()
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(100)
   pageSize?: number = 20;
 }
 
@@ -55,6 +70,7 @@ export class CheckinsListController {
     return this.checkin.listCheckins({
       from: query.from ? new Date(query.from) : undefined,
       to: query.to ? new Date(query.to) : undefined,
+      angkatan: query.angkatan,
       page: query.page ?? 1,
       pageSize: Math.min(query.pageSize ?? 20, 100),
     });

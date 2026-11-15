@@ -48,6 +48,7 @@ describe('VouchersService (T7)', () => {
         update: jest.fn().mockResolvedValue(makeVoucher()),
         findUnique: jest.fn(),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -104,9 +105,12 @@ describe('VouchersService (T7)', () => {
     });
   });
 
-  it('createTransaction gagal → 502 DOKU_GAGAL', async () => {
+  it('createTransaction gagal → 502 DOKU_GAGAL + voucher PENDING dihapus', async () => {
     doku.createTransaction.mockRejectedValue(new Error('down'));
     await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'DOKU_GAGAL' } });
+    expect(prisma.voucher.deleteMany).toHaveBeenCalledWith({
+      where: { id: expect.any(Number), status: VOUCHER_STATUS.PENDING, dokuInvoiceId: null },
+    });
   });
 
   describe('validateForPurchase (kontrak T8)', () => {

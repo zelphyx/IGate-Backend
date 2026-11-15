@@ -98,9 +98,16 @@ export class CheckinService {
   }
 
   /** Daftar kehadiran + total (FR-6.2). */
-  async listCheckins(params: { from?: Date; to?: Date; page: number; pageSize: number }) {
+  async listCheckins(params: {
+    from?: Date;
+    to?: Date;
+    angkatan?: number;
+    page: number;
+    pageSize: number;
+  }) {
     const where: Prisma.TiketWhereInput = {
       statusTiket: TICKET_STATUS.CHECKED_IN,
+      ...(params.angkatan ? { angkatan: params.angkatan } : {}),
       ...(params.from || params.to
         ? { checkedInAt: { ...(params.from ? { gte: params.from } : {}), ...(params.to ? { lte: params.to } : {}) } }
         : {}),

@@ -15,6 +15,8 @@ export class PaginationQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize?: number = 20;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() q?: string;
+  /** Tahun angkatan penuh, mis. 2024 (format persis: 4 digit). */
+  @IsOptional() @Type(() => Number) @IsInt() @Min(2000) @Max(2100) angkatan?: number;
 }
 
 function publicView(tiket: Tiket) {

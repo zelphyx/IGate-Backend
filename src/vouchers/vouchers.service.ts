@@ -78,48 +78,52 @@ export class VouchersService {
         : new Date(Date.now() + 30 * 24 * 60 * 60_000);
     const channels = this.config.get<string[]>('doku.channels') ?? ['VIRTUAL_ACCOUNT_BCA'];
 
-    let voucher: Voucher;
+    let voucher: Voucher | undefined;
     let reference: string;
     let checkoutUrl = '';
     try {
-      const trx = await this.prisma.$transaction(async (tx) => {
-        // retry kode bentrok (unique) maksimal 5x
-        let created!: Voucher;
-        for (let attempt = 0; attempt < 5; attempt++) {
-          try {
-            created = await tx.voucher.create({
-              data: {
-                kodeVoucher: generateVoucherCode(),
-                namaPemberi: dto.namaPemberi,
-                nim: dto.nim,
-                nomorHp: dto.nomorHp,
-                nilaiVoucher: String(dto.nominal),
-                status: VOUCHER_STATUS.PENDING,
-                dibuatOleh: adminId,
-                expiredAt,
-              },
-            });
-            break;
-          } catch (err) {
-            if (attempt === 4) throw err;
-          }
+      // Buat voucher PENDING di luar transaksi DOKU — kalau invoice gagal, baris PENDING
+      // dihapus supaya tidak ada voucher tanpa tagihan (revisi frontend 2026-11).
+      let created!: Voucher;
+      for (let attempt = 0; attempt < 5; attempt++) {
+        try {
+          created = await this.prisma.voucher.create({
+            data: {
+              kodeVoucher: generateVoucherCode(),
+              namaPemberi: dto.namaPemberi,
+              nim: dto.nim,
+              nomorHp: dto.nomorHp,
+              nilaiVoucher: String(dto.nominal),
+              status: VOUCHER_STATUS.PENDING,
+              dibuatOleh: adminId,
+              expiredAt,
+            },
+          });
+          break;
+        } catch (err) {
+          if (attempt === 4) throw err;
         }
-        const trx = await this.doku.createTransaction({
-          merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
-          amount: dto.nominal,
-          expiredMinutes: expiryMinutes,
-          customerName: dto.namaPemberi,
-          customerEmail: `voucher-${created.kodeVoucher.toLowerCase()}@igate.local`,
-          customerPhone: dto.nomorHp,
-          method: channels[0],
-          orderItemName: `Voucher IGATE ${created.kodeVoucher}`,
-        });
-        return { created, trx, checkoutUrl: trx.checkoutUrl };
+      }
+      voucher = created;
+      const trx = await this.doku.createTransaction({
+        merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
+        amount: dto.nominal,
+        expiredMinutes: expiryMinutes,
+        customerName: dto.namaPemberi,
+        customerEmail: `voucher-${created.kodeVoucher.toLowerCase()}@igate.local`,
+        customerPhone: dto.nomorHp,
+        method: channels[0],
+        orderItemName: `Voucher IGATE ${created.kodeVoucher}`,
       });
-      voucher = trx.created;
-      reference = trx.trx.reference;
+      reference = trx.reference;
       checkoutUrl = trx.checkoutUrl;
     } catch (err) {
+      // DOKU gagal setelah voucher dibuat → hapus baris PENDING (tidak ada voucher tanpa tagihan).
+      if (voucher?.id) {
+        await this.prisma.voucher
+          .deleteMany({ where: { id: voucher.id, status: VOUCHER_STATUS.PENDING, dokuInvoiceId: null } })
+          .catch(() => undefined);
+      }
       if (err instanceof HttpException) throw err;
       this.logger.error(`createTransaction voucher gagal: ${(err as Error).message}`);
       throw new HttpException(
@@ -133,7 +137,7 @@ export class VouchersService {
     }
 
     await this.prisma.voucher.update({
-      where: { id: voucher.id },
+      where: { id: voucher!.id },
       data: { dokuInvoiceId: reference, dokuCheckoutUrl: checkoutUrl || null },
     });
 
@@ -186,6 +190,30 @@ export class VouchersService {
       throw new VoucherInvalidError('VOUCHER_EXPIRED', 'Voucher sudah kedaluwarsa.');
     }
     return { voucher, diskon: voucher.nilaiVoucher.toString() };
+  }
+
+  /**
+   * Cek kode voucher untuk endpoint publik — TIDAK melempar exception; selalu
+   * balikin { valid, nilai, pesan } supaya form pembelian menampilkan hasilnya.
+   * Hanya voucher AKTIF & belum kadaluarsa yang dianggap valid.
+   */
+  async checkPublic(kode: string): Promise<{
+    valid: boolean;
+    nilai: string | null;
+    pesan: string;
+  }> {
+    try {
+      const { voucher } = await this.validateForPurchase(kode);
+      return {
+        valid: true,
+        nilai: voucher.nilaiVoucher.toString(),
+        pesan: `Kode voucher valid — diskon Rp ${voucher.nilaiVoucher.toString()}.`,
+      };
+    } catch (err) {
+      const code = (err as { response?: { code?: string } }).response?.code ?? 'VOUCHER_TIDAK_ADA';
+      const pesan = (err as { response?: { message?: string } }).response?.message ?? 'Kode voucher tidak ditemukan.';
+      return { valid: false, nilai: null, pesan };
+    }
   }
 
   /** Daftar voucher untuk admin (FR-5). */

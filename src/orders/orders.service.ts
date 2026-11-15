@@ -249,9 +249,16 @@ export class OrdersService {
     }
   }
 
-  async adminList(params: { status?: string; q?: string; page: number; pageSize: number }) {
+  async adminList(params: {
+    status?: string;
+    q?: string;
+    angkatan?: number;
+    page: number;
+    pageSize: number;
+  }) {
     const where = {
       ...(params.status ? { statusPembayaran: params.status } : {}),
+      ...(params.angkatan ? { angkatan: params.angkatan } : {}),
       ...(params.q
         ? {
             OR: [

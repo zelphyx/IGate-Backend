@@ -17,6 +17,7 @@ export class OrdersAdminController {
     return this.orders.adminList({
       status: query.status,
       q: query.q,
+      angkatan: query.angkatan,
       page: query.page ?? 1,
       pageSize: query.pageSize ?? 20,
     });
