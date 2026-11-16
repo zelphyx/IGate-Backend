@@ -13,7 +13,7 @@ import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
 import { isZeroMoney, minMoney, subMoney } from '../common/utils/money';
 import { generateKodeTiket } from '../common/utils/kode-tiket';
 import { DiscordService } from '../discord/discord.service';
-import { DokuClient, DokuError } from '../payments/doku/doku.types';
+import { BelibayarClient } from '../payments/belibayar/belibayar.types';
 import { PaymentsService } from '../payments/payments.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -36,7 +36,7 @@ export class OrdersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject('DokuClient') private readonly doku: DokuClient,
+    @Inject('BelibayarClient') private readonly belibayar: BelibayarClient,
     private readonly discord: DiscordService,
     private readonly events: EventEmitter2,
     private readonly payments: PaymentsService,
@@ -61,10 +61,10 @@ export class OrdersService {
     const hargaTiket = this.config.get<string>('ticketPrice')!;
     const maxTickets = this.config.get<number>('maxTickets')!;
     const expiryMinutes = this.config.get<number>('paymentExpiryMinutes')!;
-    const channels = this.config.get<string[]>('doku.channels') ?? ['VIRTUAL_ACCOUNT_BCA'];
+    const channels = this.config.get<string[]>('belibayar.channels') ?? [];
 
     let created: Tiket;
-    let dokuFailed = false;
+    let paymentFailed = false;
     let fullCoverOrder = false;
 
     // Validasi voucher sebelum transaksi (kontrak VouchersService.validateForPurchase).
@@ -149,7 +149,7 @@ export class OrdersService {
         }
 
         try {
-          const trx = await this.doku.createTransaction({
+          const trx = await this.belibayar.createTransaction({
             merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
             amount: Number(totalBayar),
             expiredMinutes: expiryMinutes,
@@ -164,8 +164,8 @@ export class OrdersService {
             data: { dokuInvoiceId: trx.reference, dokuCheckoutUrl: trx.checkoutUrl },
           });
         } catch {
-          // DOKU gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
-          dokuFailed = true;
+          // Belibayar gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
+          paymentFailed = true;
           return await tx.tiket.update({
             where: { id: tiket.id },
             data: { statusPembayaran: TICKET_PAYMENT_STATUS.FAILED },
@@ -196,16 +196,16 @@ export class OrdersService {
         (await this.prisma.tiket.findUnique({ where: { id: created.id } })) ?? created;
     }
 
-    if (dokuFailed) {
-      this.discord.logWarn(`DOKU gagal dibuat untuk order TKT-${created.id} (pembeli terblokir sementara)`);
+    if (paymentFailed) {
+      this.discord.logWarn(`Belibayar gagal dibuat untuk order TKT-${created.id} (pembeli terblokir sementara)`);
       throw new HttpException(
-        { statusCode: 502, code: 'DOKU_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
+        { statusCode: 502, code: 'BELIBAYAR_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
         HttpStatus.BAD_GATEWAY,
       );
     }
 
     const instruksiBayar = {
-      channel: channels[0],
+      channel: channels[0] ?? 'ALL',
       checkoutUrl:
         created.dokuCheckoutUrl ?? `/api/v1/orders/${MERCHANT_REF_PREFIX.TIKET}${created.id}`, // fallback ke status-page
       expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
@@ -242,7 +242,7 @@ export class OrdersService {
   async getLiveInstruction(tiket: Tiket): Promise<{ checkoutUrl?: string }> {
     if (!tiket.dokuInvoiceId) return {};
     try {
-      const detail = await this.doku.getTransactionDetail(tiket.dokuInvoiceId);
+      const detail = await this.belibayar.getTransactionDetail(tiket.dokuInvoiceId);
       return { checkoutUrl: tiket.dokuCheckoutUrl ?? detail.checkoutUrl };
     } catch {
       return tiket.dokuCheckoutUrl ? { checkoutUrl: tiket.dokuCheckoutUrl } : {};

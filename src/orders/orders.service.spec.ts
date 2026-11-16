@@ -29,6 +29,7 @@ describe('OrdersService (T4+T8)', () => {
     ticketPrice: '100000',
     maxTickets: 2,
     paymentExpiryMinutes: 360,
+    'belibayar.channels': ['va_bca'],
     'doku.channels': ['VIRTUAL_ACCOUNT_BCA'],
   };
 
@@ -77,6 +78,7 @@ describe('OrdersService (T4+T8)', () => {
         OrdersService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: (k: string) => CONFIG[k] } },
+        { provide: 'BelibayarClient', useValue: doku },
         { provide: 'DokuClient', useValue: doku },
         { provide: DiscordService, useValue: discord },
         { provide: EventEmitter2, useValue: events },
@@ -139,9 +141,9 @@ describe('OrdersService (T4+T8)', () => {
     expect(discord.logInfo).toHaveBeenCalledWith('ORDER_DIBUAT', expect.objectContaining({ ref: 'TKT-7' }));
   });
 
-  it('DOKU gagal → tiket FAILED + logWarn, lalu 502 DOKU_GAGAL', async () => {
+  it('Belibayar gagal → tiket FAILED + logWarn, lalu 502 BELIBAYAR_GAGAL', async () => {
     doku.createTransaction.mockRejectedValue(new Error('network down'));
-    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'DOKU_GAGAL' } });
+    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
     expect(tx.tiket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'FAILED' }) }),
     );

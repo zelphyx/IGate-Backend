@@ -35,6 +35,12 @@ export const envValidationSchema = Joi.object({
     .required(),
   EVENT_DATE: Joi.date().iso().optional(),
 
+  BELIBAYAR_MODE: Joi.string().valid('sandbox', 'production', 'test', 'live').default('production'),
+  BELIBAYAR_API_KEY: Joi.string().allow('').default(''),
+  BELIBAYAR_SECRET_KEY: Joi.string().allow('').default(''),
+  BELIBAYAR_WEBHOOK_SECRET: Joi.string().allow('').default(''),
+  BELIBAYAR_CHANNELS: Joi.string().allow('').default(''),
+
   DOKU_MODE: Joi.string().valid('sandbox', 'production', 'test').default('sandbox'),
   DOKU_CLIENT_ID: Joi.string().allow('').default(''),
   DOKU_SECRET_KEY: Joi.string().allow('').default(''),

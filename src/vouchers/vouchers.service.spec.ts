@@ -15,6 +15,7 @@ const CONFIG = {
   voucherMinNominal: '10000',
   voucherMaxNominal: '10000000',
   paymentExpiryMinutes: 360,
+  'belibayar.channels': ['va_bca'],
   'doku.channels': ['VIRTUAL_ACCOUNT_BCA'],
   eventDate: undefined,
 };
@@ -71,6 +72,7 @@ describe('VouchersService (T7)', () => {
         VouchersService,
         { provide: PrismaService, useValue: prisma },
         { provide: ConfigService, useValue: { get: (k: string) => (CONFIG as any)[k] } },
+        { provide: 'BelibayarClient', useValue: doku },
         { provide: 'DokuClient', useValue: doku },
         { provide: DiscordService, useValue: discord },
       ],
@@ -105,9 +107,9 @@ describe('VouchersService (T7)', () => {
     });
   });
 
-  it('createTransaction gagal → 502 DOKU_GAGAL + voucher PENDING dihapus', async () => {
+  it('createTransaction gagal → 502 BELIBAYAR_GAGAL + voucher PENDING dihapus', async () => {
     doku.createTransaction.mockRejectedValue(new Error('down'));
-    await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'DOKU_GAGAL' } });
+    await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
     expect(prisma.voucher.deleteMany).toHaveBeenCalledWith({
       where: { id: expect.any(Number), status: VOUCHER_STATUS.PENDING, dokuInvoiceId: null },
     });

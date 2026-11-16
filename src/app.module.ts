@@ -13,7 +13,7 @@ import { HealthModule } from './health/health.module';
 import { AuthModule } from './auth/auth.module';
 import { AdminModule } from './admin/admin.module';
 import { DiscordModule } from './discord/discord.module';
-import { DokuModule } from './payments/doku/doku.module';
+import { BelibayarModule } from './payments/belibayar/belibayar.module';
 import { OrdersModule } from './orders/orders.module';
 import { PaymentsModule } from './payments/payments.module';
 import { FulfillmentModule } from './fulfillment/fulfillment.module';
@@ -57,7 +57,7 @@ import { buildThrottlerOptions } from './common/throttler.config';
     AuthModule,
     AdminModule,
     DiscordModule,
-    DokuModule,
+    BelibayarModule,
     OrdersModule,
     PaymentsModule,
     VouchersModule,

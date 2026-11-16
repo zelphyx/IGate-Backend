@@ -2,31 +2,29 @@ import { Body, Controller, HttpCode, Inject, Post, Req, UnauthorizedException } 
 import { Request } from 'express';
 import { PaymentsService } from './payments.service';
 import { Public } from '../common/decorators/public.decorator';
-import { DokuCallbackHeaders, DokuClient } from './doku/doku.types';
-
-/** Path Notification URL yang terdaftar di dashboard DOKU — komponen Request-Target signature. */
-const NOTIFICATION_TARGET = '/api/v1/payments/callback';
+import { BelibayarClient } from './belibayar/belibayar.types';
 
 @Public()
 @Controller('payments')
 export class CallbackController {
   constructor(
     private readonly payments: PaymentsService,
-    @Inject('DokuClient') private readonly doku: DokuClient,
+    @Inject('BelibayarClient') private readonly belibayar: BelibayarClient,
   ) {}
 
-  /** Webhook DOKU (HTTP Notification) — HMAC header wajib valid sebelum pemrosesan (FR-3.3). */
+  /**
+   * Webhook Belibayar (HTTP Notification)
+   * Header: X-Belibayar-Signature: hex(HMAC-SHA256(raw_body, webhook_secret))
+   */
   @Post('callback')
   @HttpCode(200)
   async callback(@Req() req: Request & { rawBody?: Buffer }, @Body() body: unknown) {
     const raw = req.rawBody ?? Buffer.from(JSON.stringify(body));
-    const headers: DokuCallbackHeaders = {
-      clientId: req.headers['client-id'] as string | undefined,
-      requestId: req.headers['request-id'] as string | undefined,
-      requestTimestamp: req.headers['request-timestamp'] as string | undefined,
-      signature: req.headers['signature'] as string | undefined,
-    };
-    if (!this.doku.verifyCallbackSignature(raw, headers, NOTIFICATION_TARGET)) {
+    const signature =
+      (req.headers['x-belibayar-signature'] as string | undefined) ??
+      (req.headers['signature'] as string | undefined);
+
+    if (!this.belibayar.verifyCallbackSignature(raw, signature)) {
       throw new UnauthorizedException('Signature callback tidak valid.');
     }
     return this.payments.handleCallback(raw);

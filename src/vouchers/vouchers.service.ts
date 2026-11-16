@@ -18,7 +18,7 @@ import {
 import { maskNim, maskPhone } from '../common/utils/mask';
 import { toCents } from '../common/utils/money';
 import { DiscordService } from '../discord/discord.service';
-import { DokuClient } from '../payments/doku/doku.types';
+import { BelibayarClient } from '../payments/belibayar/belibayar.types';
 import { VOUCHER_CODE_REGEX, generateVoucherCode } from './voucher-code';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 
@@ -48,7 +48,7 @@ export class VouchersService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
-    @Inject('DokuClient') private readonly doku: DokuClient,
+    @Inject('BelibayarClient') private readonly belibayar: BelibayarClient,
     private readonly discord: DiscordService,
   ) {}
 
@@ -76,13 +76,13 @@ export class VouchersService {
       eventDate && eventDate.getTime() > Date.now()
         ? eventDate
         : new Date(Date.now() + 30 * 24 * 60 * 60_000);
-    const channels = this.config.get<string[]>('doku.channels') ?? ['VIRTUAL_ACCOUNT_BCA'];
+    const channels = this.config.get<string[]>('belibayar.channels') ?? [];
 
     let voucher: Voucher | undefined;
     let reference: string;
     let checkoutUrl = '';
     try {
-      // Buat voucher PENDING di luar transaksi DOKU — kalau invoice gagal, baris PENDING
+      // Buat voucher PENDING di luar transaksi Belibayar — kalau invoice gagal, baris PENDING
       // dihapus supaya tidak ada voucher tanpa tagihan (revisi frontend 2026-11).
       let created!: Voucher;
       for (let attempt = 0; attempt < 5; attempt++) {
@@ -105,7 +105,7 @@ export class VouchersService {
         }
       }
       voucher = created;
-      const trx = await this.doku.createTransaction({
+      const trx = await this.belibayar.createTransaction({
         merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
         amount: dto.nominal,
         expiredMinutes: expiryMinutes,
@@ -118,7 +118,7 @@ export class VouchersService {
       reference = trx.reference;
       checkoutUrl = trx.checkoutUrl;
     } catch (err) {
-      // DOKU gagal setelah voucher dibuat → hapus baris PENDING (tidak ada voucher tanpa tagihan).
+      // Belibayar gagal setelah voucher dibuat → hapus baris PENDING (tidak ada voucher tanpa tagihan).
       if (voucher?.id) {
         await this.prisma.voucher
           .deleteMany({ where: { id: voucher.id, status: VOUCHER_STATUS.PENDING, dokuInvoiceId: null } })
@@ -129,7 +129,7 @@ export class VouchersService {
       throw new HttpException(
         {
           statusCode: 502,
-          code: 'DOKU_GAGAL',
+          code: 'BELIBAYAR_GAGAL',
           message: 'Gagal membuat invoice pembayaran voucher. Coba beberapa saat lagi.',
         },
         HttpStatus.BAD_GATEWAY,
@@ -154,7 +154,7 @@ export class VouchersService {
       statusPembayaran: VOUCHER_STATUS.PENDING,
       nominal: dto.nominal,
       instruksiBayar: {
-        channel: channels[0],
+        channel: channels[0] ?? 'ALL',
         checkoutUrl,
         expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
       },

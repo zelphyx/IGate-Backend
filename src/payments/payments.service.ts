@@ -18,7 +18,7 @@ import {
 } from '../common/constants';
 import { maskEmail } from '../common/utils/mask';
 import { DiscordService } from '../discord/discord.service';
-import { parseCallbackJson } from './doku/doku.service';
+import { parseCallbackJson } from './belibayar/belibayar.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 
 export interface MarkPaidResult {
@@ -56,7 +56,7 @@ export class PaymentsService {
         const result = await this.vouchers.markVoucherPaid(
           voucherId,
           payload.payment_method ?? '-',
-          `Callback DOKU ref=${payload.reference}`,
+          `Callback Belibayar ref=${payload.reference}`,
         );
         if (result.reason === 'TIDAK_ADA') {
           this.logger.warn(`Callback PAID untuk voucher tak dikenal VCH-${voucherId}`);
@@ -85,7 +85,7 @@ export class PaymentsService {
         tiketId,
         payload.payment_method ?? '-',
         null,
-        `Callback DOKU ref=${payload.reference}`,
+        `Callback Belibayar ref=${payload.reference}`,
       );
       if (result.reason === 'TIDAK_ADA') {
         this.logger.warn(`Callback PAID untuk tiket tak dikenal TKT-${tiketId}`);
@@ -225,7 +225,7 @@ export class PaymentsService {
         metodePembayaran: payload.payment_method ?? '-',
         status: REKAP_STATUS.FAILED,
         tiketId,
-        keterangan: `Callback DOKU status=${status}`,
+        keterangan: `Callback Belibayar status=${status}`,
       },
     });
     return { processed: true };

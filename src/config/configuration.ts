@@ -28,6 +28,17 @@ export const configuration = () => ({
   /** Jumlah resmi mahasiswa angkatan 2026 — penyebut persen progress "punishment" (0 = nonaktif). */
   angkatan2026Total: parseInt(process.env.ANGKATAN_2026_TOTAL ?? '0', 10),
 
+  belibayar: {
+    mode: process.env.BELIBAYAR_MODE ?? (process.env.BELIBAYAR_API_KEY?.startsWith('byr_live_') ? 'production' : 'sandbox'),
+    apiKey: process.env.BELIBAYAR_API_KEY,
+    secretKey: process.env.BELIBAYAR_SECRET_KEY,
+    webhookSecret: process.env.BELIBAYAR_WEBHOOK_SECRET,
+    channels: (process.env.BELIBAYAR_CHANNELS ?? '')
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean),
+  },
+
   doku: {
     mode: process.env.DOKU_MODE ?? 'sandbox',
     clientId: process.env.DOKU_CLIENT_ID,
