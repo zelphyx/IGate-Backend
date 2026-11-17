@@ -15,8 +15,14 @@ export interface BelibayarCallbackHeaders {
 
 export interface BelibayarClient {
   createTransaction(input: CreateBelibayarInput): Promise<BelibayarTransaction>;
+  /** QRIS dinamis (payment/charge) — mengembalikan qrContent EMV untuk digambar frontend. */
+  createQrisTransaction(input: CreateBelibayarInput): Promise<BelibayarTransaction>;
   closeTransaction(reference: string): Promise<void>;
+  /** Batalkan transaksi charge yang masih pending (jalur QRIS/VA). */
+  cancelChargeTransaction(reference: string): Promise<void>;
   getTransactionDetail(reference: string): Promise<BelibayarDetail>;
+  /** Cek status transaksi charge (GET /payment/status/{reference}). */
+  getChargeTransactionDetail(reference: string): Promise<BelibayarDetail>;
   verifyCallbackSignature(
     rawBody: Buffer | string,
     signature?: string,
@@ -26,9 +32,13 @@ export interface BelibayarClient {
 export interface BelibayarTransaction {
   reference: string;
   merchantRef: string;
+  /** URL halaman pembayaran (payment link). Kosong untuk transaksi QRIS charge. */
   checkoutUrl: string;
-  payCode?: string;
+  /** String EMV QRIS dinamis — hanya untuk transaksi QRIS (payment/charge). */
+  qrContent?: string;
+  /** URL PNG QRIS dari provider — hanya untuk transaksi QRIS. */
   qrUrl?: string;
+  payCode?: string;
   amount: number;
   expiredAt: Date;
 }
@@ -40,6 +50,8 @@ export interface BelibayarDetail {
   paymentMethod?: string;
   amount: number;
   checkoutUrl?: string;
+  qrContent?: string;
+  qrUrl?: string;
 }
 
 export interface BelibayarCallbackPayload {

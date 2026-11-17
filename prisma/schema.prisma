@@ -35,6 +35,11 @@ model Tiket {
   statusPembayaran String    @db.VarChar(20) @map("status_pembayaran")
   dokuInvoiceId    String?   @unique @db.VarChar(100) @map("doku_invoice_id")
   dokuCheckoutUrl  String?   @db.VarChar(500) @map("doku_checkout_url")
+  /// String EMV QRIS dinamis (payment/charge) — digambar frontend jadi QRIS asli.
+  /// TEXT: string EMV QRIS bisa 300+ karakter, VARCHAR(191) default Prisma pasti memotong.
+  qrContent        String?   @db.Text @map("qr_content")
+  /// URL PNG QRIS dari Belibayar (opsional, alternatif render).
+  qrUrl            String?   @db.VarChar(500) @map("qr_url")
   kodeTiket        String    @unique @db.VarChar(20) @map("kode_tiket")
   qrToken          String?   @unique @db.VarChar(100) @map("qr_token")
   statusTiket      String    @db.VarChar(20) @map("status_tiket")

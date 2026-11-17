@@ -18,7 +18,12 @@ describe('OrdersService (T4+T8)', () => {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   let tx: any;
   let prisma: any;
-  let doku: { createTransaction: jest.Mock; getTransactionDetail: jest.Mock };
+  let doku: {
+    createTransaction: jest.Mock;
+    createQrisTransaction: jest.Mock;
+    getTransactionDetail: jest.Mock;
+    getChargeTransactionDetail: jest.Mock;
+  };
   let discord: { logInfo: jest.Mock; logWarn: jest.Mock; notifyStock: jest.Mock };
   let events: { emit: jest.Mock };
   let payments: { markTicketPaid: jest.Mock };
@@ -66,7 +71,17 @@ describe('OrdersService (T4+T8)', () => {
         amount: 100000,
         expiredAt: new Date(),
       }),
+      createQrisTransaction: jest.fn().mockResolvedValue({
+        reference: 'TRX123',
+        merchantRef: 'TKT-7',
+        checkoutUrl: '',
+        qrContent: '00020101021226610014COM.BELIBAYARMOCK',
+        qrUrl: 'https://link.belibayar.id/v1/qris/TRX123.png',
+        amount: 100000,
+        expiredAt: new Date(),
+      }),
       getTransactionDetail: jest.fn(),
+      getChargeTransactionDetail: jest.fn(),
     };
     discord = { logInfo: jest.fn(), logWarn: jest.fn(), notifyStock: jest.fn() };
     events = { emit: jest.fn() };
@@ -129,20 +144,24 @@ describe('OrdersService (T4+T8)', () => {
     });
   });
 
-  it('order sukses → tiket UNPAID, angkatan 2024, reference tersimpan, event + log Discord', async () => {
+  it('order sukses → tiket UNPAID, angkatan 2024, QRIS tersimpan, event + log Discord', async () => {
     const result = await service.create(validDto);
     expect(result.tiket.statusPembayaran).toBe(TICKET_PAYMENT_STATUS.UNPAID);
     expect(result.tiket.angkatan).toBe(2024);
     expect(result.tiket.dokuInvoiceId).toBe('TRX123');
-    expect(doku.createTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({ merchantRef: 'TKT-7', amount: 100000 }),
+    expect(result.tiket.qrContent).toBe('00020101021226610014COM.BELIBAYARMOCK');
+    expect(doku.createQrisTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ merchantRef: 'TKT-7', amount: 100000, method: 'qris' }),
     );
+    // instruksiBayar mengirim qrString EMV untuk digambar frontend jadi QRIS asli
+    expect(result.instruksiBayar.qrString).toBe('00020101021226610014COM.BELIBAYARMOCK');
+    expect(result.instruksiBayar.qrUrl).toBe('https://link.belibayar.id/v1/qris/TRX123.png');
     expect(events.emit).toHaveBeenCalledWith('order.created', { tiketId: 7 });
     expect(discord.logInfo).toHaveBeenCalledWith('ORDER_DIBUAT', expect.objectContaining({ ref: 'TKT-7' }));
   });
 
   it('Belibayar gagal → tiket FAILED + logWarn, lalu 502 BELIBAYAR_GAGAL', async () => {
-    doku.createTransaction.mockRejectedValue(new Error('network down'));
+    doku.createQrisTransaction.mockRejectedValue(new Error('network down'));
     await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
     expect(tx.tiket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'FAILED' }) }),
@@ -177,7 +196,7 @@ describe('OrdersService (T4+T8)', () => {
     expect(result.tiket.diskon).toBe('50000.00');
     expect(result.tiket.totalBayar).toBe('50000.00');
     expect(result.tiket.kodeVoucher).toBe('IGATE-ABCD-2345');
-    expect(doku.createTransaction).toHaveBeenCalledWith(
+    expect(doku.createQrisTransaction).toHaveBeenCalledWith(
       expect.objectContaining({ amount: 50000 }),
     );
     expect(payments.markTicketPaid).not.toHaveBeenCalled();
@@ -195,7 +214,7 @@ describe('OrdersService (T4+T8)', () => {
     prisma.tiket.findUnique.mockResolvedValue(created);
     const result = await service.create({ ...validDto, kodeVoucher: 'IGATE-FULL-2345' });
     expect(result.tiket.totalBayar).toBe('0.00');
-    expect(doku.createTransaction).not.toHaveBeenCalled();
+    expect(doku.createQrisTransaction).not.toHaveBeenCalled();
     expect(payments.markTicketPaid).toHaveBeenCalledWith(
       7,
       'VOUCHER',

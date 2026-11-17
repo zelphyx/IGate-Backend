@@ -68,6 +68,75 @@ describe('BelibayarLiveService', () => {
     expect(normalizeExpiryMinutes(2000)).toBe(1440);
   });
 
+  it('createQrisTransaction mengirim body payment/charge & memetakan qr_content', async () => {
+    const live = createService();
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: {
+          reference: 'TKT-9',
+          amount: 45000,
+          status: 'pending',
+          qr_content: '00020101021226610014COM.BELIBAYARREAL',
+          qr_url: 'https://link.belibayar.id/v1/qris/QRX.png',
+          expired_at: Math.floor(Date.now() / 1000) + 3600,
+        },
+      }),
+    });
+    jest.spyOn(global, 'fetch').mockImplementation(fetchMock as unknown as typeof fetch);
+
+    const res = await live.createQrisTransaction({
+      merchantRef: 'TKT-9',
+      amount: 45000,
+      expiredMinutes: 60,
+      customerName: 'Budi',
+      customerEmail: 'budi@mail.id',
+      customerPhone: '081234567890',
+      orderItemName: 'Tiket IGATE',
+    });
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/direct/v1/payment/charge');
+    const body = JSON.parse(String(init.body));
+    expect(body.reference).toBe('TKT-9');
+    expect(body.amount).toBe(45000);
+    expect(body.pay_method).toEqual({ method: 'qris' });
+    expect(body.static_qr).toBe(false);
+    expect(typeof body.expired_time).toBe('number');
+    // X-Signature = HMAC atas raw body (canonical POST)
+    const expectedSig = createHmac('sha256', secretKey).update(String(init.body)).digest('hex');
+    expect((init.headers as Record<string, string>)['X-Signature']).toBe(expectedSig);
+
+    expect(res.qrContent).toBe('00020101021226610014COM.BELIBAYARREAL');
+    expect(res.qrUrl).toBe('https://link.belibayar.id/v1/qris/QRX.png');
+    expect(res.checkoutUrl).toBe('');
+    jest.restoreAllMocks();
+  });
+
+  it('getChargeTransactionDetail memakai canonical ":" + timestamp (X-Timestamp)', async () => {
+    const live = createService();
+    const fetchMock = jest.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: { reference: 'TKT-9', status: 'paid', amount: 45000, payment_channel: 'QRIS' },
+      }),
+    });
+    jest.spyOn(global, 'fetch').mockImplementation(fetchMock as unknown as typeof fetch);
+
+    const res = await live.getChargeTransactionDetail('TKT-9');
+
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toContain('/direct/v1/payment/status/TKT-9');
+    const ts = (init.headers as Record<string, string>)['X-Timestamp'];
+    const expectedSig = createHmac('sha256', secretKey).update(`:${ts}`).digest('hex');
+    expect((init.headers as Record<string, string>)['X-Signature']).toBe(expectedSig);
+    expect(res.status).toBe('PAID');
+    expect(res.paymentMethod).toBe('QRIS');
+    jest.restoreAllMocks();
+  });
+
   it('normalizePhone membersihkan dan memformat nomor HP menjadi 628xxx', () => {
     expect(normalizePhone('081234567890')).toBe('6281234567890');
     expect(normalizePhone('+6281234567890')).toBe('6281234567890');

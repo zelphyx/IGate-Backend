@@ -47,13 +47,17 @@ export class SweepService {
 
     const expired = await this.prisma.tiket.findMany({
       where: { statusPembayaran: TICKET_PAYMENT_STATUS.UNPAID, createdAt: { lt: cutoff } },
-      select: { id: true, dokuInvoiceId: true, totalBayar: true },
+      select: { id: true, dokuInvoiceId: true, qrContent: true, totalBayar: true },
       take: 200,
     });
 
     for (const t of expired) {
       if (t.dokuInvoiceId) {
-        await this.belibayar.closeTransaction(t.dokuInvoiceId).catch((err: Error) =>
+        // Tiket = QRIS charge; voucher = payment link. Jalur cancel-nya beda endpoint.
+        const close = t.qrContent
+          ? this.belibayar.cancelChargeTransaction(t.dokuInvoiceId)
+          : this.belibayar.closeTransaction(t.dokuInvoiceId);
+        await close.catch((err: Error) =>
           this.logger.warn(`closeTransaction gagal untuk TKT-${t.id}: ${err.message}`),
         );
       }

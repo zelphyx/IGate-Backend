@@ -30,10 +30,14 @@ export function normalizePhone(phone: string): string {
 
 /**
  * Klien Belibayar (Direct API & Payment Link) — docs.belibayar.id.
+ * - QRIS dinamis      : POST {base}/direct/v1[/sandbox]/payment/charge   → data.qr_content (EMV)
+ * - Status charge     : GET  {base}/direct/v1[/sandbox]/payment/status/{reference}
+ *                       (signature legacy: canonical = ":" + timestamp, header X-Timestamp)
+ * - Batalkan charge   : POST {base}/direct/v1[/sandbox]/payment/cancel
  * - Buat payment link : POST {base}/direct/v1[/sandbox]/payment-link
- * - Cek status       : POST {base}/direct/v1[/sandbox]/payment-link/status
- * - Batalkan link    : POST {base}/direct/v1[/sandbox]/payment-link/cancel
- * - Signature        : hex(HMAC-SHA256(canonical, secret_key))
+ * - Cek status link   : POST {base}/direct/v1[/sandbox]/payment-link/status
+ * - Batalkan link     : POST {base}/direct/v1[/sandbox]/payment-link/cancel
+ * - Signature         : hex(HMAC-SHA256(canonical, secret_key))
  *                      POST: canonical = raw JSON body
  *                      GET : canonical = path (mis. /direct/v1/channels)
  * - Webhook          : verifikasi header X-Belibayar-Signature atas raw body dengan webhook_secret
@@ -108,6 +112,90 @@ export class BelibayarLiveService implements BelibayarClient {
       checkoutUrl: String(linkData['payment_link_url'] ?? ''),
       amount: Number(linkData['amount'] ?? input.amount),
       expiredAt,
+    };
+  }
+
+  /**
+   * QRIS dinamis via POST /payment/charge — respons data.qr_content adalah string EMV
+   * yang digambar frontend jadi QRIS asli (nominal terkunci, sekali pakai).
+   */
+  async createQrisTransaction(input: CreateBelibayarInput): Promise<BelibayarTransaction> {
+    const bodyObj: Record<string, unknown> = {
+      reference: input.merchantRef,
+      amount: input.amount,
+      pay_method: { method: 'qris' },
+      customer_name: input.customerName,
+      customer_email: input.customerEmail,
+      static_qr: false,
+      // payment/charge pakai expired_time unix detik (min 60s, maks 90 hari)
+      expired_time: Math.floor(Date.now() / 1000) + input.expiredMinutes * 60,
+    };
+    if (input.customerPhone) {
+      bodyObj['customer_phone'] = normalizePhone(input.customerPhone);
+    }
+
+    const jsonBody = JSON.stringify(bodyObj);
+    const data = await this.request<Record<string, unknown>>(
+      `${this.pathPrefix}/payment/charge`,
+      { method: 'POST', body: jsonBody },
+    );
+
+    const d = (data['data'] ?? {}) as Record<string, unknown>;
+    const expiredAtSec = Number(d['expired_at'] ?? 0);
+    const expiredAt =
+      expiredAtSec > 0
+        ? new Date(expiredAtSec * 1000)
+        : new Date(Date.now() + input.expiredMinutes * 60_000);
+
+    return {
+      reference: String(d['reference'] ?? input.merchantRef),
+      merchantRef: input.merchantRef,
+      checkoutUrl: '',
+      qrContent: d['qr_content'] ? String(d['qr_content']) : undefined,
+      qrUrl: d['qr_url'] ? String(d['qr_url']) : undefined,
+      amount: Number(d['amount'] ?? input.amount),
+      expiredAt,
+    };
+  }
+
+  /** Batalkan transaksi charge (VA/eWallet/QRIS/Retail) yang masih pending. */
+  async cancelChargeTransaction(reference: string): Promise<void> {
+    const bodyObj = { reference, reason: 'Pesanan kedaluwarsa / dibatalkan' };
+    try {
+      await this.request(
+        `${this.pathPrefix}/payment/cancel`,
+        { method: 'POST', body: JSON.stringify(bodyObj) },
+      );
+    } catch (err) {
+      if (err instanceof BelibayarError && err.status === 409) {
+        // sudah paid / expired / cancelled — noop
+        return;
+      }
+      throw err;
+    }
+  }
+
+  /** Cek status transaksi charge (GET /payment/status/{reference}, signature X-Timestamp). */
+  async getChargeTransactionDetail(reference: string): Promise<BelibayarDetail> {
+    const timestamp = Math.floor(Date.now() / 1000).toString();
+    const secretKey = this.config.getOrThrow<string>('belibayar.secretKey');
+    // GET tanpa body → canonical = ":" + timestamp (signature legacy v1 + X-Timestamp)
+    const signature = createHmac('sha256', secretKey).update(`:${timestamp}`, 'utf-8').digest('hex');
+
+    const data = await this.request<Record<string, unknown>>(
+      `${this.pathPrefix}/payment/status/${encodeURIComponent(reference)}`,
+      { method: 'GET', headers: { 'X-Timestamp': timestamp, 'X-Signature': signature } },
+    );
+
+    const d = (data['data'] ?? {}) as Record<string, unknown>;
+    return {
+      reference: String(d['reference'] ?? reference),
+      merchantRef: String(d['reference'] ?? reference),
+      status: mapBelibayarStatus(String(d['status'] ?? 'pending')),
+      paymentMethod: d['payment_channel'] ? String(d['payment_channel']) : undefined,
+      amount: Number(d['amount'] ?? 0),
+      qrContent: d['qr_content'] ? String(d['qr_content']) : undefined,
+      qrUrl: d['qr_url'] ? String(d['qr_url']) : undefined,
     };
   }
 
@@ -241,7 +329,24 @@ export class BelibayarStubService implements BelibayarClient {
     };
   }
 
+  async createQrisTransaction(input: CreateBelibayarInput): Promise<BelibayarTransaction> {
+    return {
+      reference: input.merchantRef,
+      merchantRef: input.merchantRef,
+      checkoutUrl: '',
+      // EMV palsu namun valid bentuknya — cukup untuk render QR di dev/e2e.
+      qrContent: `00020101021226610014COM.BELIBAYARWBB0000000000000${input.merchantRef}`,
+      qrUrl: `https://link.belibayar.id/v1/qris/mock-${input.merchantRef}.png`,
+      amount: input.amount,
+      expiredAt: new Date(Date.now() + input.expiredMinutes * 60_000),
+    };
+  }
+
   async closeTransaction(reference: string): Promise<void> {
+    void reference;
+  }
+
+  async cancelChargeTransaction(reference: string): Promise<void> {
     void reference;
   }
 
@@ -251,6 +356,16 @@ export class BelibayarStubService implements BelibayarClient {
       merchantRef: reference,
       status: 'PENDING',
       paymentMethod: 'VIRTUAL_ACCOUNT_BCA',
+      amount: 0,
+    };
+  }
+
+  async getChargeTransactionDetail(reference: string): Promise<BelibayarDetail> {
+    return {
+      reference,
+      merchantRef: reference,
+      status: 'PENDING',
+      paymentMethod: 'QRIS',
       amount: 0,
     };
   }

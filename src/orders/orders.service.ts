@@ -22,9 +22,13 @@ export interface OrderResult {
   tiket: Tiket;
   instruksiBayar: {
     channel: string;
+    /** URL halaman pembayaran — kosong untuk QRIS; QR digambar dari qrString. */
     checkoutUrl: string;
-    payCode?: string;
+    /** String EMV QRIS dinamis — gambar sebagai QRIS asli (qrcode.js/qrious). */
+    qrString?: string;
+    /** URL PNG QRIS dari provider (alternatif render). */
     qrUrl?: string;
+    payCode?: string;
     expiredAt: Date;
   };
 }
@@ -61,7 +65,6 @@ export class OrdersService {
     const hargaTiket = this.config.get<string>('ticketPrice')!;
     const maxTickets = this.config.get<number>('maxTickets')!;
     const expiryMinutes = this.config.get<number>('paymentExpiryMinutes')!;
-    const channels = this.config.get<string[]>('belibayar.channels') ?? [];
 
     let created: Tiket;
     let paymentFailed = false;
@@ -149,19 +152,25 @@ export class OrdersService {
         }
 
         try {
-          const trx = await this.belibayar.createTransaction({
+          // QRIS dinamis (payment/charge) — frontend menggambar qrContent jadi QRIS asli.
+          const trx = await this.belibayar.createQrisTransaction({
             merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
             amount: Number(totalBayar),
             expiredMinutes: expiryMinutes,
             customerName: dto.nama,
             customerEmail: dto.email,
             customerPhone: dto.nomorHp,
-            method: channels[0],
+            method: 'qris',
             orderItemName: 'Tiket IGATE',
           });
           return await tx.tiket.update({
             where: { id: tiket.id },
-            data: { dokuInvoiceId: trx.reference, dokuCheckoutUrl: trx.checkoutUrl },
+            data: {
+              dokuInvoiceId: trx.reference,
+              dokuCheckoutUrl: trx.checkoutUrl || null,
+              qrContent: trx.qrContent ?? null,
+              qrUrl: trx.qrUrl ?? null,
+            },
           });
         } catch {
           // Belibayar gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
@@ -205,9 +214,10 @@ export class OrdersService {
     }
 
     const instruksiBayar = {
-      channel: channels[0] ?? 'ALL',
-      checkoutUrl:
-        created.dokuCheckoutUrl ?? `/api/v1/orders/${MERCHANT_REF_PREFIX.TIKET}${created.id}`, // fallback ke status-page
+      channel: 'QRIS',
+      checkoutUrl: created.dokuCheckoutUrl ?? '',
+      qrString: created.qrContent ?? undefined,
+      qrUrl: created.qrUrl ?? undefined,
       expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
     };
 
@@ -236,16 +246,26 @@ export class OrdersService {
     return tiket;
   }
 
-  /** Detail DOKU live untuk instruksi bayar di halaman cek status (FR-2.5).
-   *  Checkout URL DOKU tidak bisa di-re-fetch dari Check Status API — diambil dari kolom
-   *  yang di-persist saat create (doku_checkout_url); status tetap live dari DOKU. */
-  async getLiveInstruction(tiket: Tiket): Promise<{ checkoutUrl?: string }> {
+  /** Detail live untuk instruksi bayar di halaman cek status (FR-2.5).
+   *  Tiket pakai QRIS charge: string EMV di-re-fetch agar pembeli bisa ambil ulang QR
+   *  kalau halaman ditutup (kolom qr_content di-persist saat create sebagai fallback). */
+  async getLiveInstruction(
+    tiket: Tiket,
+  ): Promise<{ checkoutUrl?: string; qrString?: string; qrUrl?: string }> {
     if (!tiket.dokuInvoiceId) return {};
     try {
-      const detail = await this.belibayar.getTransactionDetail(tiket.dokuInvoiceId);
-      return { checkoutUrl: tiket.dokuCheckoutUrl ?? detail.checkoutUrl };
+      const detail = await this.belibayar.getChargeTransactionDetail(tiket.dokuInvoiceId);
+      return {
+        checkoutUrl: tiket.dokuCheckoutUrl ?? detail.checkoutUrl,
+        qrString: detail.qrContent ?? tiket.qrContent ?? undefined,
+        qrUrl: detail.qrUrl ?? tiket.qrUrl ?? undefined,
+      };
     } catch {
-      return tiket.dokuCheckoutUrl ? { checkoutUrl: tiket.dokuCheckoutUrl } : {};
+      return {
+        ...(tiket.dokuCheckoutUrl ? { checkoutUrl: tiket.dokuCheckoutUrl } : {}),
+        ...(tiket.qrContent ? { qrString: tiket.qrContent } : {}),
+        ...(tiket.qrUrl ? { qrUrl: tiket.qrUrl } : {}),
+      };
     }
   }
 

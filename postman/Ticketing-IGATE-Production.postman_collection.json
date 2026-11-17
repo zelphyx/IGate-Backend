@@ -1,0 +1,473 @@
+{
+  "info": {
+    "name": "Ticketing IGATE API (Production)",
+    "description": "Collection resmi API Ticketing IGATE — menunjuk langsung ke production.\n\n**Base URL:** `https://igate-api.inxorastudio.com/api/v1`\n\n## Cara pakai\n1. Buka **Auth → Login** → klik **Send**. Token otomatis tersimpan ke variabel collection (`accessToken` & `refreshToken`), semua request lain langsung bisa jalan.\n2. Kredensial default di body login: superadmin production. Ganti kalau perlu.\n3. ID dinamis (`merchantRef`, `ticketId`, `voucherId`, `adminId`, `qrToken`, `voucherKode`) sebagian terisi otomatis dari response — lihat Scripts di tiap request.\n4. Semua endpoint admin butuh role tertentu: **(S)** = superadmin, **(A)** = admin, **(SC)** = scanner.\n\n## Catatan penting\n- Rate limit: login 5/15menit/IP, buat order 5/menit/IP, cek voucher publik 10/menit/IP.\n- Nominal uang balik sebagai **string Decimal** (mis. \"45000\").\n- Error bisnis: `{statusCode, code, message}`; error validasi: `{statusCode:400, message:[...]}`.\n- Endpoint pembayaran (POST /orders, POST /admin/vouchers) memanggil gateway **Belibayar** — request hanya lolos jika IP publik pengirim sudah di-whitelist di dashboard Belibayar.\n- `POST /payments/callback` hanya untuk webhook Belibayar (signature HMAC wajib) — tidak untuk tes manual biasa.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [{ "key": "token", "value": "{{accessToken}}", "type": "string" }]
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "https://igate-api.inxorastudio.com/api/v1" },
+    { "key": "accessToken", "value": "" },
+    { "key": "refreshToken", "value": "" },
+    { "key": "merchantRef", "value": "TKT-1" },
+    { "key": "ticketId", "value": "1" },
+    { "key": "voucherId", "value": "1" },
+    { "key": "voucherKode", "value": "IGATE-XXXX-XXXX" },
+    { "key": "adminId", "value": "2" },
+    { "key": "qrToken", "value": "" }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/health",
+            "description": "Publik. `{\"status\":\"ok\",\"db\":true,\"redis\":true}` — cek cepat apakah API hidup."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login (auto-set token)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "if (body.refreshToken) pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"awasadaigate2026@admin.com\",\n  \"password\": \"mendingnontondoomsday\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login",
+            "description": "Superadmin production. Token otomatis tersimpan. Rate limit 5/15 menit/IP — kalau kena 429 tunggu 15 menit."
+          }
+        },
+        {
+          "name": "Refresh token (rotasi)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.accessToken) pm.collectionVariables.set('accessToken', body.accessToken);",
+                  "if (body.refreshToken) pm.collectionVariables.set('refreshToken', body.refreshToken);",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/refresh",
+            "description": "Rotasi: RT lama dicabut, pasangan baru tersimpan otomatis."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"refreshToken\": \"{{refreshToken}}\"\n}" },
+            "url": "{{baseUrl}}/auth/logout",
+            "description": "Cabut refresh token. Butuh Bearer."
+          }
+        },
+        {
+          "name": "Me",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/auth/me",
+            "description": "Profil dari JWT: `{sub, email, role}`. Role: superadmin | admin | scanner."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Orders (publik)",
+      "item": [
+        {
+          "name": "Buat order tiket",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.merchantRef) pm.collectionVariables.set('merchantRef', body.merchantRef);",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nama\": \"Budi\",\n  \"nim\": \"2406012123001\",\n  \"angkatan\": 2024,\n  \"nomorHp\": \"081234567890\",\n  \"email\": \"budi@mail.id\",\n  \"kodeVoucher\": \"{{voucherKode}}\"\n}"
+            },
+            "url": "{{baseUrl}}/orders",
+            "description": "Publik. NIM: 10–20 digit angka. `angkatan` opsional (2000–2100, default dari NIM). `kodeVoucher` opsional. Response: `{merchantRef, hargaTiket, diskon, totalBayar, instruksiBayar:{checkoutUrl}}`. Rate limit 5/menit/IP. **Dipanggil via gateway Belibayar — IP server harus di-whitelist.**"
+          }
+        },
+        {
+          "name": "Cek status order",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/orders/{{merchantRef}}",
+            "description": "Publik. PII di-mask. Untuk UNPAID, `instruksiBayar.checkoutUrl` diambil live dari gateway. Polling tiap 5 detik. Status: UNPAID | PAID | EXPIRED | FAILED | CANCELED."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Vouchers (publik)",
+      "item": [
+        {
+          "name": "Cek kode voucher",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "url": "{{baseUrl}}/vouchers/{{voucherKode}}",
+            "description": "Publik. Selalu 200: `{valid, nilai, pesan}`. Untuk form beli tiket agar total setelah diskon langsung terlihat. Rate limit 10/menit/IP."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Manajemen (S)",
+      "item": [
+        {
+          "name": "Daftar admin (S)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin",
+            "description": "Superadmin saja. Array langsung (bukan paginated): `[{id, nama, email, role, createdAt}]`."
+          }
+        },
+        {
+          "name": "Buat admin/scanner (S)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.id) pm.collectionVariables.set('adminId', body.id);",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nama\": \"Scanner A\",\n  \"email\": \"scanner-baru@igate.id\",\n  \"password\": \"minimal10karakter\",\n  \"role\": \"scanner\"\n}"
+            },
+            "url": "{{baseUrl}}/admin",
+            "description": "Superadmin saja. Role: superadmin | admin | scanner. Password min 10 char."
+          }
+        },
+        {
+          "name": "Update admin (S)",
+          "request": {
+            "method": "PATCH",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"nama\": \"Nama Baru\",\n  \"role\": \"admin\",\n  \"password\": \"resetMinimal10\"\n}"
+            },
+            "url": "{{baseUrl}}/admin/{{adminId}}",
+            "description": "Superadmin saja. Semua field opsional. Tidak bisa mengubah role diri sendiri (403)."
+          }
+        },
+        {
+          "name": "Hapus admin (S)",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/admin/{{adminId}}",
+            "description": "Superadmin saja. Tidak bisa menghapus diri sendiri (403)."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Orders (A/S)",
+      "item": [
+        {
+          "name": "Daftar tiket (A/S)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data[0]) {",
+                  "  pm.collectionVariables.set('ticketId', body.data[0].id);",
+                  "  if (body.data[0].qrToken) pm.collectionVariables.set('qrToken', body.data[0].qrToken);",
+                  "}",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/orders?page=1&pageSize=20&status=&q=&angkatan=",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "orders"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" },
+                { "key": "status", "value": "", "description": "UNPAID | PAID | EXPIRED | FAILED | CANCELED (kosongkan = semua)" },
+                { "key": "q", "value": "", "description": "Search nama / NIM / email (contains)" },
+                { "key": "angkatan", "value": "", "description": "Tahun penuh, mis. 2024 (kosongkan = semua)" }
+              ]
+            },
+            "description": "admin & superadmin. `ticketId` & `qrToken` baris pertama otomatis tersimpan untuk request lain."
+          }
+        },
+        {
+          "name": "Detail tiket (A/S)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/orders/{{ticketId}}",
+            "description": "Detail + rekap (riwayat transaksi) + checkedByAdmin."
+          }
+        },
+        {
+          "name": "Verifikasi manual (S)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": ["pm.test('200 OK', () => pm.response.to.have.status(200));"]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/orders/{{ticketId}}/verify-manual",
+            "description": "Superadmin saja (BR-11: lunas tunai). Hanya dari UNPAID/EXPIRED. Response `{processed, reason?}`. Tanpa body."
+          }
+        },
+        {
+          "name": "Kirim ulang email tiket (A/S)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/admin/orders/{{ticketId}}/resend-email",
+            "description": "Hanya tiket PAID. Response `{queued:true}`. Tanpa body."
+          }
+        },
+        {
+          "name": "Unduh PDF tiket (A/S)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/orders/{{ticketId}}/ticket-pdf",
+            "description": "Response biner `application/pdf`. Di Postman: Send → Save Response → Save to file."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Vouchers (A/S)",
+      "item": [
+        {
+          "name": "Buat voucher (A/S)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.kodeVoucher) pm.collectionVariables.set('voucherKode', body.kodeVoucher);",
+                  "pm.test('201 Created', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"namaPemberi\": \"Mahasiswa Pemberi\",\n  \"nim\": \"24060129990401\",\n  \"nomorHp\": \"081234567890\",\n  \"nominal\": 25000\n}"
+            },
+            "url": "{{baseUrl}}/admin/vouchers",
+            "description": "admin & superadmin. NIM pemberi WAJIB 14 digit. Nominal 10.000–10.000.000. Response berisi kodeVoucher (sekali ini saja) + instruksiBayar.checkoutUrl. **Via Belibayar — IP harus di-whitelist.**"
+          }
+        },
+        {
+          "name": "Daftar voucher (A/S)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.data && body.data[0]) {",
+                  "  pm.collectionVariables.set('voucherId', body.data[0].id);",
+                  "  pm.collectionVariables.set('voucherKode', body.data[0].kodeVoucher);",
+                  "}",
+                  "pm.test('200 OK', () => pm.response.to.have.status(200));"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/vouchers?status=&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "vouchers"],
+              "query": [
+                { "key": "status", "value": "", "description": "PENDING | AKTIF | TERPAKAI | EXPIRED | NONAKTIF (kosongkan = semua)" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            },
+            "description": "admin & superadmin. Pagination normal."
+          }
+        },
+        {
+          "name": "Nonaktifkan voucher (S)",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/admin/vouchers/{{voucherId}}/nonaktifkan",
+            "description": "Superadmin saja. Hanya dari status AKTIF (lain → 409). Tanpa body."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Check-in (SC/A/S)",
+      "item": [
+        {
+          "name": "Scan QR (SC/A/S)",
+          "request": {
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"qrToken\": \"{{qrToken}}\"\n}" },
+            "url": "{{baseUrl}}/admin/checkin/scan",
+            "description": "scanner, admin, superadmin. Sukses: `{nama, nim, angkatan, checkedInAt}` (201). 404 TOKEN_TIDAK_DITEMUKAN=QR salah (merah); 409 BELUM_LUNAS (oranye); 409 SUDAH_CHECKIN (kuning, bukan error)."
+          }
+        },
+        {
+          "name": "Daftar kehadiran (A/S)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/checkins?from=&to=&angkatan=&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "checkins"],
+              "query": [
+                { "key": "from", "value": "", "description": "ISO 8601, mis. 2026-12-16T00:00:00Z" },
+                { "key": "to", "value": "", "description": "ISO 8601" },
+                { "key": "angkatan", "value": "", "description": "Tahun penuh, mis. 2026" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            },
+            "description": "admin & superadmin."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin — Stats & Rekap (A/S)",
+      "item": [
+        {
+          "name": "Stats dashboard (A/S)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/stats",
+            "description": "admin & superadmin. `{terjual, perStatus{...}, checkin, pendapatan{total,hariIni}, sisaKuota, voucher{...}, perAngkatan:[{angkatan, terdaftar, lunas, hadir}]}`."
+          }
+        },
+        {
+          "name": "Progress angkatan 2026 (A/S)",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/admin/stats/angkatan-2026",
+            "description": "admin & superadmin. Progress punishment: `{totalAnggota: 234, lunas, hadir, persenBeli, persenHadir, sisaBelumBeli, sisaBelumHadir}` — persen terhadap 234 anggota resmi."
+          }
+        },
+        {
+          "name": "Daftar rekap (A/S)",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/admin/rekap?from=&to=&jenis=&status=&page=1&pageSize=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["admin", "rekap"],
+              "query": [
+                { "key": "from", "value": "", "description": "ISO 8601" },
+                { "key": "to", "value": "", "description": "ISO 8601" },
+                { "key": "jenis", "value": "", "description": "PEMBELIAN_TIKET | PEMBELIAN_VOUCHER" },
+                { "key": "status", "value": "", "description": "SUCCESS | PENDING | FAILED" },
+                { "key": "page", "value": "1" },
+                { "key": "pageSize", "value": "20" }
+              ]
+            },
+            "description": "admin & superadmin."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Payments (webhook)",
+      "item": [
+        {
+          "name": "Callback Belibayar (webhook)",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"...\": \"payload webhook dari Belibayar\"\n}" },
+            "url": "{{baseUrl}}/payments/callback",
+            "description": "⚠️ Bukan untuk tes manual — hanya dipanggil Belibayar. Signature HMAC `X-Belibayar-Signature` wajib valid (dari BELIBAYAR_WEBHOOK_SECRET), selain itu 401. Untuk simulasi webhook, kirim payload dengan signature HMAC-SHA256-hex dari raw body pakai webhook secret."
+          }
+        }
+      ]
+    }
+  ]
+}
