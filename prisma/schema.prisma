@@ -70,6 +70,11 @@ model Voucher {
   /// invoice_number transaksi DOKU (penamaan kolom legacy dibiarkan, keputusan A-1)
   dokuInvoiceId String? @unique @db.VarChar(100) @map("doku_invoice_id")
   dokuCheckoutUrl String? @db.VarChar(500) @map("doku_checkout_url")
+  /// String EMV QRIS dinamis (payment/charge) — digambar frontend jadi QRIS asli.
+  /// TEXT: string EMV QRIS bisa 300+ karakter.
+  qrContent    String?  @db.Text @map("qr_content")
+  /// URL PNG QRIS dari Belibayar (opsional, alternatif render).
+  qrUrl        String?  @db.VarChar(500) @map("qr_url")
   rekap        Rekap[]
 
   @@index([status])

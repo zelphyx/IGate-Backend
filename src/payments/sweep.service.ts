@@ -89,12 +89,16 @@ export class SweepService {
     const pendingCutoff = new Date(Date.now() - expiryMinutes * 60_000);
     const pending = await this.prisma.voucher.findMany({
       where: { status: VOUCHER_STATUS.PENDING, createdAt: { lt: pendingCutoff } },
-      select: { id: true, dokuInvoiceId: true, nilaiVoucher: true },
+      select: { id: true, dokuInvoiceId: true, qrContent: true, nilaiVoucher: true },
       take: 200,
     });
     for (const v of pending) {
       if (v.dokuInvoiceId) {
-        await this.belibayar.closeTransaction(v.dokuInvoiceId).catch((err: Error) =>
+        // Voucher baru = QRIS charge; voucher lama (legacy) = payment link. Endpoint cancel beda.
+        const close = v.qrContent
+          ? this.belibayar.cancelChargeTransaction(v.dokuInvoiceId)
+          : this.belibayar.closeTransaction(v.dokuInvoiceId);
+        await close.catch((err: Error) =>
           this.logger.warn(`closeTransaction voucher gagal untuk VCH-${v.id}: ${err.message}`),
         );
       }

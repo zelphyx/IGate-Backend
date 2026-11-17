@@ -39,7 +39,7 @@ describe('VouchersService (T7)', () => {
   /* eslint-disable @typescript-eslint/no-explicit-any */
   let service: VouchersService;
   let prisma: any;
-  let doku: { createTransaction: jest.Mock };
+  let doku: { createTransaction: jest.Mock; createQrisTransaction: jest.Mock };
   let discord: { logInfo: jest.Mock };
 
   beforeEach(async () => {
@@ -61,6 +61,15 @@ describe('VouchersService (T7)', () => {
         reference: 'TRXV1',
         merchantRef: 'VCH-1',
         checkoutUrl: 'https://doku.test/VCH-1',
+        amount: 50000,
+        expiredAt: new Date(),
+      }),
+      createQrisTransaction: jest.fn().mockResolvedValue({
+        reference: 'TRXV1',
+        merchantRef: 'VCH-1',
+        checkoutUrl: '',
+        qrContent: '00020101021226610014COM.BELIBAYARMOCK',
+        qrUrl: 'https://link.belibayar.id/v1/qris/TRXV1.png',
         amount: 50000,
         expiredAt: new Date(),
       }),
@@ -89,8 +98,16 @@ describe('VouchersService (T7)', () => {
     expect(prisma.voucher.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ status: 'PENDING', dibuatOleh: 1 }) }),
     );
-    expect(doku.createTransaction).toHaveBeenCalledWith(
-      expect.objectContaining({ merchantRef: 'VCH-1', amount: 50000 }),
+    expect(doku.createQrisTransaction).toHaveBeenCalledWith(
+      expect.objectContaining({ merchantRef: 'VCH-1', amount: 50000, method: 'qris' }),
+    );
+    // instruksiBayar mengirim qrString EMV — sama seperti jalur tiket
+    expect(result.instruksiBayar.qrString).toBe('00020101021226610014COM.BELIBAYARMOCK');
+    expect(result.instruksiBayar.qrUrl).toBe('https://link.belibayar.id/v1/qris/TRXV1.png');
+    expect(prisma.voucher.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ qrContent: '00020101021226610014COM.BELIBAYARMOCK' }),
+      }),
     );
     expect(prisma.rekap.create).not.toHaveBeenCalled();
   });
@@ -107,8 +124,8 @@ describe('VouchersService (T7)', () => {
     });
   });
 
-  it('createTransaction gagal → 502 BELIBAYAR_GAGAL + voucher PENDING dihapus', async () => {
-    doku.createTransaction.mockRejectedValue(new Error('down'));
+  it('createQrisTransaction gagal → 502 BELIBAYAR_GAGAL + voucher PENDING dihapus', async () => {
+    doku.createQrisTransaction.mockRejectedValue(new Error('down'));
     await expect(service.create(dto, 1)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
     expect(prisma.voucher.deleteMany).toHaveBeenCalledWith({
       where: { id: expect.any(Number), status: VOUCHER_STATUS.PENDING, dokuInvoiceId: null },

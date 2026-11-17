@@ -28,7 +28,11 @@ export interface VoucherInstruction {
   nominal: number;
   instruksiBayar: {
     channel: string;
+    /** URL halaman pembayaran — kosong untuk QRIS; QR digambar dari qrString. */
     checkoutUrl: string;
+    /** String EMV QRIS dinamis — gambar sebagai QRIS asli (qrcode.js/qrious). */
+    qrString?: string;
+    /** URL PNG QRIS dari provider (alternatif render). */
     qrUrl?: string;
     expiredAt: Date;
   };
@@ -76,11 +80,12 @@ export class VouchersService {
       eventDate && eventDate.getTime() > Date.now()
         ? eventDate
         : new Date(Date.now() + 30 * 24 * 60 * 60_000);
-    const channels = this.config.get<string[]>('belibayar.channels') ?? [];
 
     let voucher: Voucher | undefined;
     let reference: string;
     let checkoutUrl = '';
+    let qrContent: string | undefined;
+    let qrUrl: string | undefined;
     try {
       // Buat voucher PENDING di luar transaksi Belibayar — kalau invoice gagal, baris PENDING
       // dihapus supaya tidak ada voucher tanpa tagihan (revisi frontend 2026-11).
@@ -105,18 +110,21 @@ export class VouchersService {
         }
       }
       voucher = created;
-      const trx = await this.belibayar.createTransaction({
+      // QRIS dinamis (payment/charge) — sama dengan jalur tiket; frontend menggambar qrContent.
+      const trx = await this.belibayar.createQrisTransaction({
         merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
         amount: dto.nominal,
         expiredMinutes: expiryMinutes,
         customerName: dto.namaPemberi,
         customerEmail: `voucher-${created.kodeVoucher.toLowerCase()}@igate.local`,
         customerPhone: dto.nomorHp,
-        method: channels[0],
+        method: 'qris',
         orderItemName: `Voucher IGATE ${created.kodeVoucher}`,
       });
       reference = trx.reference;
       checkoutUrl = trx.checkoutUrl;
+      qrContent = trx.qrContent;
+      qrUrl = trx.qrUrl;
     } catch (err) {
       // Belibayar gagal setelah voucher dibuat → hapus baris PENDING (tidak ada voucher tanpa tagihan).
       if (voucher?.id) {
@@ -138,7 +146,12 @@ export class VouchersService {
 
     await this.prisma.voucher.update({
       where: { id: voucher!.id },
-      data: { dokuInvoiceId: reference, dokuCheckoutUrl: checkoutUrl || null },
+      data: {
+        dokuInvoiceId: reference,
+        dokuCheckoutUrl: checkoutUrl || null,
+        qrContent: qrContent ?? null,
+        qrUrl: qrUrl ?? null,
+      },
     });
 
     this.discord.logInfo('VOUCHER_DIBUAT', {
@@ -154,8 +167,10 @@ export class VouchersService {
       statusPembayaran: VOUCHER_STATUS.PENDING,
       nominal: dto.nominal,
       instruksiBayar: {
-        channel: channels[0] ?? 'ALL',
+        channel: 'QRIS',
         checkoutUrl,
+        qrString: qrContent,
+        qrUrl,
         expiredAt: new Date(Date.now() + expiryMinutes * 60_000),
       },
     };
