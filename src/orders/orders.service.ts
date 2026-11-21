@@ -12,6 +12,8 @@ import {
 import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
 import { isZeroMoney, minMoney, subMoney, addFeePercent } from '../common/utils/money';
 import { generateKodeTiket } from '../common/utils/kode-tiket';
+import { generatePublicToken } from '../common/utils/public-token';
+import { TurnstileService } from './turnstile.service';
 import { DiscordService } from '../discord/discord.service';
 import { BelibayarClient } from '../payments/belibayar/belibayar.types';
 import { PaymentsService } from '../payments/payments.service';
@@ -45,9 +47,13 @@ export class OrdersService {
     private readonly events: EventEmitter2,
     private readonly payments: PaymentsService,
     private readonly vouchers: VouchersService,
+    private readonly turnstile: TurnstileService,
   ) {}
 
-  async create(dto: CreateOrderDto): Promise<OrderResult> {
+  async create(dto: CreateOrderDto, options: { captchaToken?: string; ip?: string } = {}): Promise<OrderResult> {
+    // Captcha (Cloudflare Turnstile) — anti-bot order; no-op bila secret kosong (dev/test).
+    await this.turnstile.verifyOrThrow(options.captchaToken, options.ip);
+
     // NIM 10–20 digit angka (keputusan panitia 2026-11: prefix 2406012 tidak lagi diwajibkan).
     if (!/^\d{10,20}$/.test(dto.nim)) {
       throw new HttpException(
@@ -137,6 +143,8 @@ export class OrdersService {
             hargaTiket: harga,
             // Kode tampilan unik — collision acak 6 char ditangani retry di bawah (P2002 kode_tiket).
             kodeTiket: generateKodeTiket(),
+            // Token acak untuk URL status publik — TKT-{id} tidak lagi diekspos (anti-enumerasi).
+            publicToken: generatePublicToken(),
             kodeVoucher: voucherInfo?.kode ?? null,
             diskon,
             totalBayar,
@@ -246,6 +254,16 @@ export class OrdersService {
     const tiket = await this.prisma.tiket.findUnique({
       where: { id: Number(match[1]) },
     });
+    if (!tiket) throw new NotFoundException('Order tidak ditemukan.');
+    return tiket;
+  }
+
+  /** Status publik via token acak 32-char — menggantikan jalur TKT-{id} yang sekuensial. */
+  async findByPublicToken(publicToken: string): Promise<Tiket> {
+    if (!/^[A-Za-z0-9_-]{32}$/.test(publicToken)) {
+      throw new NotFoundException('Order tidak ditemukan.');
+    }
+    const tiket = await this.prisma.tiket.findUnique({ where: { publicToken } });
     if (!tiket) throw new NotFoundException('Order tidak ditemukan.');
     return tiket;
   }

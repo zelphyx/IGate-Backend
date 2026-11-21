@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { Test } from '@nestjs/testing';
 import { EventEmitter2 } from '@nestjs/event-emitter';
 import { OrdersService } from './orders.service';
+import { TurnstileService } from './turnstile.service';
 import { PrismaService } from '../prisma/prisma.module';
 import { DiscordService } from '../discord/discord.service';
 import { PaymentsService } from '../payments/payments.service';
@@ -52,7 +53,7 @@ describe('OrdersService (T4+T8)', () => {
       tiket: {
         count: jest.fn().mockResolvedValue(0),
         create: jest.fn().mockImplementation(({ data }) => {
-          createdRow = { id: 7, ...data };
+          createdRow = { id: 7, publicToken: 'a'.repeat(32), ...data };
           return Promise.resolve(createdRow);
         }),
         update: jest.fn().mockImplementation(({ where, data }) =>
@@ -98,6 +99,10 @@ describe('OrdersService (T4+T8)', () => {
         { provide: DiscordService, useValue: discord },
         { provide: EventEmitter2, useValue: events },
         { provide: PaymentsService, useValue: payments },
+        {
+          provide: TurnstileService,
+          useValue: { enabled: false, verifyOrThrow: jest.fn().mockResolvedValue(undefined) },
+        },
         { provide: VouchersService, useValue: vouchers },
       ],
     }).compile();
@@ -171,6 +176,58 @@ describe('OrdersService (T4+T8)', () => {
 
   it('findByMerchantRef: ref tidak valid → 404', async () => {
     await expect(service.findByMerchantRef('XXX-1')).rejects.toThrow(HttpException);
+  });
+
+  it('findByPublicToken: format salah / token tak dikenal → 404', async () => {
+    await expect(service.findByPublicToken('terlalu-pendek')).rejects.toThrow(HttpException);
+    await expect(service.findByPublicToken('b'.repeat(32))).rejects.toThrow(HttpException);
+  });
+
+  it('captcha aktif & token kosong → 403 CAPTCHA_DIBUTUHKAN sebelum apa pun', async () => {
+    const verify = jest.fn().mockRejectedValue(
+      new HttpException({ statusCode: 403, code: 'CAPTCHA_DIBUTUHKAN', message: 'x' }, 403),
+    );
+    const mod = await Test.createTestingModule({
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: { get: (k: string) => CONFIG[k] } },
+        { provide: 'BelibayarClient', useValue: doku },
+        { provide: 'DokuClient', useValue: doku },
+        { provide: DiscordService, useValue: discord },
+        { provide: EventEmitter2, useValue: events },
+        { provide: PaymentsService, useValue: payments },
+        { provide: VouchersService, useValue: vouchers },
+        { provide: TurnstileService, useValue: { enabled: true, verifyOrThrow: verify } },
+      ],
+    }).compile();
+    const svc = mod.get(OrdersService);
+    await expect(svc.create(validDto)).rejects.toMatchObject({
+      response: { code: 'CAPTCHA_DIBUTUHKAN' },
+    });
+    expect(verify).toHaveBeenCalledWith(undefined, undefined);
+    expect(tx.tiket.create).not.toHaveBeenCalled();
+  });
+
+  it('captcha token diteruskan ke TurnstileService dari dto.captchaToken', async () => {
+    const verify = jest.fn().mockResolvedValue(undefined);
+    const mod = await Test.createTestingModule({
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: { get: (k: string) => CONFIG[k] } },
+        { provide: 'BelibayarClient', useValue: doku },
+        { provide: 'DokuClient', useValue: doku },
+        { provide: DiscordService, useValue: discord },
+        { provide: EventEmitter2, useValue: events },
+        { provide: PaymentsService, useValue: payments },
+        { provide: VouchersService, useValue: vouchers },
+        { provide: TurnstileService, useValue: { enabled: true, verifyOrThrow: verify } },
+      ],
+    }).compile();
+    const svc = mod.get(OrdersService);
+    await svc.create({ ...validDto, captchaToken: 'tok-abc' }, { captchaToken: 'tok-abc', ip: '1.2.3.4' });
+    expect(verify).toHaveBeenCalledWith('tok-abc', '1.2.3.4');
   });
 
   // ── T8: pemakaian voucher ────────────────────────────────────────────────

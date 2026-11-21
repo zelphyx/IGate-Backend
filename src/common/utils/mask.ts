@@ -19,3 +19,19 @@ export function maskPhone(phone: string): string {
 export function maskNim(nim: string): string {
   return nim;
 }
+
+/** Nama untuk view publik: huruf pertama tiap kata utuh, sisanya bintang ("Budi S***"). */
+export function maskNama(nama: string): string {
+  return nama
+    .split(/\s+/)
+    .map((kata) =>
+      kata.length <= 2 ? kata[0] + '*' : `${kata[0]}${'*'.repeat(kata.length - 2)}${kata[kata.length - 1]}`,
+    )
+    .join(' ');
+}
+
+/** NIM untuk view publik: 3 digit awal + mask sisanya ("240***********"). */
+export function maskNimPublic(nim: string): string {
+  if (nim.length <= 3) return '***';
+  return `${nim.slice(0, 3)}${'*'.repeat(nim.length - 3)}`;
+}

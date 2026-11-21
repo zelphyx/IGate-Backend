@@ -53,4 +53,13 @@ export class CreateOrderDto {
   @IsString()
   @MaxLength(40)
   kodeVoucher?: string;
+
+  @ApiPropertyOptional({
+    example: '0.zo4...',
+    description: 'Token Cloudflare Turnstile (wajib saat TURNSTILE_SECRET_KEY aktif di server).',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2048)
+  captchaToken?: string;
 }

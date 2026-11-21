@@ -28,6 +28,9 @@ export const envValidationSchema = Joi.object({
   PAYMENT_EXPIRY_MINUTES: Joi.number().integer().min(1).default(360),
   // Fee gateway dilempar ke pembeli, permil (0,7% = 7). 0 = fee ditanggung panitia.
   PAYMENT_FEE_PERMILLE: Joi.number().integer().min(0).max(100).default(0),
+
+  // Cloudflare Turnstile captcha (kosong = mati, dev/test)
+  TURNSTILE_SECRET_KEY: Joi.string().allow('').default(''),
   NIM_REGEX: Joi.string().required(),
   VOUCHER_MIN_NOMINAL: Joi.string()
     .pattern(/^\d+(\.\d{1,2})?$/)

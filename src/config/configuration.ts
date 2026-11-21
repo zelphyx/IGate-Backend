@@ -26,12 +26,18 @@ export const configuration = () => ({
    * di-charge = ceil(total / (1 − fee)) sehingga net ke panitia tetap total.
    * 0 = mati (bayar apa adanya, fee ditanggung panitia).
    */
-  paymentFeePermille: parseInt(process.env.PAYMENT_FEE_PERMILLE ?? '0', 10),  nimRegex: new RegExp(process.env.NIM_REGEX ?? '^\\d{10,20}$'),
+  paymentFeePermille: parseInt(process.env.PAYMENT_FEE_PERMILLE ?? '0', 10),
+  nimRegex: new RegExp(process.env.NIM_REGEX ?? '^\\d{10,20}$'),
   voucherMinNominal: process.env.VOUCHER_MIN_NOMINAL ?? '10000',
   voucherMaxNominal: process.env.VOUCHER_MAX_NOMINAL ?? '10000000',
   eventDate: process.env.EVENT_DATE ? new Date(process.env.EVENT_DATE) : undefined,
   /** Jumlah resmi mahasiswa angkatan 2026 — penyebut persen progress "punishment" (0 = nonaktif). */
   angkatan2026Total: parseInt(process.env.ANGKATAN_2026_TOTAL ?? '0', 10),
+
+  turnstile: {
+    // Kosong = captcha mati (dev/test). Produksi: secret dari dashboard Cloudflare Turnstile.
+    secret: process.env.TURNSTILE_SECRET_KEY ?? '',
+  },
 
   belibayar: {
     mode: process.env.BELIBAYAR_MODE ?? (process.env.BELIBAYAR_API_KEY?.startsWith('byr_live_') ? 'production' : 'sandbox'),

@@ -1,4 +1,4 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Ip, Param, Post, Query } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
@@ -6,9 +6,8 @@ import { Type } from 'class-transformer';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Public } from '../common/decorators/public.decorator';
-import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
+import { maskEmail, maskNama, maskNimPublic, maskPhone } from '../common/utils/mask';
 import { Tiket } from '@prisma/client';
-import { MERCHANT_REF_PREFIX } from '../common/constants';
 
 export class PaginationQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
@@ -19,11 +18,11 @@ export class PaginationQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(2000) @Max(2100) angkatan?: number;
 }
 
+/** View status publik — PII berat dimasking (revisi keamanan 2026-11): nama & NIM tidak utuh. */
 function publicView(tiket: Tiket) {
   return {
-    merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
-    nama: tiket.nama,
-    nim: maskNim(tiket.nim),
+    nama: maskNama(tiket.nama),
+    nim: maskNimPublic(tiket.nim),
     nomorHp: maskPhone(tiket.nomorHp),
     email: maskEmail(tiket.email),
     hargaTiket: tiket.hargaTiket,
@@ -31,7 +30,7 @@ function publicView(tiket: Tiket) {
     totalBayar: tiket.totalBayar,
     statusPembayaran: tiket.statusPembayaran,
     statusTiket: tiket.statusTiket,
-    expiredAt: tiket.paidAt ? undefined : null, // instruksi live menyusul dari DOKU detail
+    expiredAt: tiket.paidAt ? undefined : null,
   };
 }
 
@@ -41,14 +40,18 @@ export class OrdersController {
   constructor(private readonly orders: OrdersService) {}
 
   @Public()
-  @ApiOperation({ summary: 'Buat order tiket (FR-2)' })
+  @ApiOperation({ summary: 'Buat order tiket (FR-2) — wajib lolos Turnstile bila aktif' })
   @Throttle({ default: { ttl: 60_000, limit: 5 } }) // PRD §12.5: order 5/menit/IP
   @Post()
   @HttpCode(201)
-  async create(@Body() dto: CreateOrderDto) {
-    const { tiket, instruksiBayar } = await this.orders.create(dto);
+  async create(@Body() dto: CreateOrderDto, @Ip() ip: string) {
+    const { tiket, instruksiBayar } = await this.orders.create(dto, {
+      captchaToken: dto.captchaToken,
+      ip,
+    });
     return {
-      merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
+      // publicToken = kunci URL status; TKT-{id} internal tidak diekspos (anti-enumerasi).
+      publicToken: tiket.publicToken,
       statusPembayaran: tiket.statusPembayaran,
       hargaTiket: tiket.hargaTiket,
       diskon: tiket.diskon,
@@ -58,10 +61,11 @@ export class OrdersController {
   }
 
   @Public()
-  @ApiOperation({ summary: 'Cek status order publik, PII dimasking (FR-2.5)' })
-  @Get(':merchantRef')
-  async status(@Param('merchantRef') merchantRef: string) {
-    const tiket = await this.orders.findByMerchantRef(merchantRef);
+  @ApiOperation({ summary: 'Cek status order publik via token acak, PII dimasking (FR-2.5)' })
+  @Throttle({ default: { ttl: 60_000, limit: 20 } }) // 20/menit/IP — token dicoba brute tetap jauh di luar ini
+  @Get(':publicToken')
+  async status(@Param('publicToken') publicToken: string) {
+    const tiket = await this.orders.findByPublicToken(publicToken);
     const instruksi = tiket.statusPembayaran === 'UNPAID' ? await this.orders.getLiveInstruction(tiket) : {};
     return { ...publicView(tiket), instruksiBayar: instruksi };
   }

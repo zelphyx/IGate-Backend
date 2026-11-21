@@ -41,6 +41,9 @@ model Tiket {
   /// URL PNG QRIS dari Belibayar (opsional, alternatif render).
   qrUrl            String?   @db.VarChar(500) @map("qr_url")
   kodeTiket        String    @unique @db.VarChar(20) @map("kode_tiket")
+  /// Token acak 32-char untuk endpoint status publik — menggantikan TKT-{id}
+  /// yang sekuensial dan rawan enumerasi (revisi frontend 2026-11, item keamanan).
+  publicToken      String    @unique @default(cuid()) @db.VarChar(40) @map("public_token")
   qrToken          String?   @unique @db.VarChar(100) @map("qr_token")
   statusTiket      String    @db.VarChar(20) @map("status_tiket")
   checkedInAt      DateTime? @map("checked_in_at")
