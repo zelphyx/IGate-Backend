@@ -21,7 +21,12 @@ export const configuration = () => ({
   ticketPrice: process.env.TICKET_PRICE ?? '0',
   maxTickets: parseInt(process.env.MAX_TICKETS ?? '0', 10),
   paymentExpiryMinutes: parseInt(process.env.PAYMENT_EXPIRY_MINUTES ?? '360', 10),
-  nimRegex: new RegExp(process.env.NIM_REGEX ?? '^\\d{10,20}$'),
+  /**
+   * Fee gateway (permil, 0,7% = 7) yang dilempar ke pembeli: nominal QRIS yang
+   * di-charge = ceil(total / (1 − fee)) sehingga net ke panitia tetap total.
+   * 0 = mati (bayar apa adanya, fee ditanggung panitia).
+   */
+  paymentFeePermille: parseInt(process.env.PAYMENT_FEE_PERMILLE ?? '0', 10),  nimRegex: new RegExp(process.env.NIM_REGEX ?? '^\\d{10,20}$'),
   voucherMinNominal: process.env.VOUCHER_MIN_NOMINAL ?? '10000',
   voucherMaxNominal: process.env.VOUCHER_MAX_NOMINAL ?? '10000000',
   eventDate: process.env.EVENT_DATE ? new Date(process.env.EVENT_DATE) : undefined,

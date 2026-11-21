@@ -16,7 +16,7 @@ import {
   REKAP_STATUS,
 } from '../common/constants';
 import { maskNim, maskPhone } from '../common/utils/mask';
-import { toCents } from '../common/utils/money';
+import { toCents, addFeePercent } from '../common/utils/money';
 import { DiscordService } from '../discord/discord.service';
 import { BelibayarClient } from '../payments/belibayar/belibayar.types';
 import { VOUCHER_CODE_REGEX, generateVoucherCode } from './voucher-code';
@@ -111,9 +111,12 @@ export class VouchersService {
       }
       voucher = created;
       // QRIS dinamis (payment/charge) — sama dengan jalur tiket; frontend menggambar qrContent.
+      // Fee gateway dilempar ke pembeli: tagihan = ceil(nominal/(1−fee)); nilaiVoucher tetap nominal.
+      const feePermille = this.config.get<number>('paymentFeePermille') ?? 0;
+      const tagihan = feePermille > 0 ? addFeePercent(String(dto.nominal), feePermille) : String(dto.nominal);
       const trx = await this.belibayar.createQrisTransaction({
         merchantRef: `${MERCHANT_REF_PREFIX.VOUCHER}${created.id}`,
-        amount: dto.nominal,
+        amount: Number(tagihan),
         expiredMinutes: expiryMinutes,
         customerName: dto.namaPemberi,
         customerEmail: `voucher-${created.kodeVoucher.toLowerCase()}@igate.local`,

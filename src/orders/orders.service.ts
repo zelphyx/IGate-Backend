@@ -10,7 +10,7 @@ import {
   PAYMENT_METHODS,
 } from '../common/constants';
 import { maskEmail, maskNim, maskPhone } from '../common/utils/mask';
-import { isZeroMoney, minMoney, subMoney } from '../common/utils/money';
+import { isZeroMoney, minMoney, subMoney, addFeePercent } from '../common/utils/money';
 import { generateKodeTiket } from '../common/utils/kode-tiket';
 import { DiscordService } from '../discord/discord.service';
 import { BelibayarClient } from '../payments/belibayar/belibayar.types';
@@ -153,9 +153,13 @@ export class OrdersService {
 
         try {
           // QRIS dinamis (payment/charge) — frontend menggambar qrContent jadi QRIS asli.
+          // Fee gateway dilempar ke pembeli: nominal tagihan = ceil(total/(1−fee)),
+          // totalBayar & rekap tetap mencatat harga asli (net ke panitia tetap total).
+          const feePermille = this.config.get<number>('paymentFeePermille') ?? 0;
+          const tagihan = feePermille > 0 ? addFeePercent(totalBayar, feePermille) : totalBayar;
           const trx = await this.belibayar.createQrisTransaction({
             merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
-            amount: Number(totalBayar),
+            amount: Number(tagihan),
             expiredMinutes: expiryMinutes,
             customerName: dto.nama,
             customerEmail: dto.email,

@@ -32,6 +32,22 @@ export function subMoney(a: string, b: string): string {
   return fromCents(toCents(a) - toCents(b));
 }
 
+/**
+ * Nominal tagihan agar net ke merchant >= value bila fee 0,0x% dibebankan ke pembeli.
+ * feePermille dalam permil (0,7% = 7). Tagihan = ceil(value / (1 − fee)), lalu
+ * dibulatkan BARU ke rupiah penuh (QRIS tidak menerima sen).
+ * Contoh: addFeePercent("45000", 7) → 45000/0,993 = 45317,22 → "45318".
+ */
+export function addFeePercent(value: string, feePermille: number): string {
+  const cents = toCents(value);
+  // ceil(cents × 1000 / (1000 − fee)) — tanpa float (BR-13)
+  const den = BigInt(1000 - feePermille);
+  const withFeeCents = (cents * 1000n + den - 1n) / den;
+  // ceil ke rupiah penuh (kelipatan 100 cents)
+  const rupiah = (withFeeCents + 99n) / 100n;
+  return fromCents(rupiah * 100n);
+}
+
 export function isZeroMoney(a: string): boolean {
   return toCents(a) === 0n;
 }
