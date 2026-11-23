@@ -218,7 +218,7 @@ export class OrdersService {
     }
 
     if (paymentFailed) {
-      this.discord.logWarn(`Belibayar gagal dibuat untuk order TKT-${created.id} (pembeli terblokir sementara)`);
+      this.discord.logWarn(`Belibayar gagal dibuat untuk order TKT-${created.id} — gateway error, pembeli perlu order ulang`);
       throw new HttpException(
         { statusCode: 502, code: 'BELIBAYAR_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
         HttpStatus.BAD_GATEWAY,

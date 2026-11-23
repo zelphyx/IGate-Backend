@@ -41,7 +41,7 @@ export class OrdersController {
 
   @Public()
   @ApiOperation({ summary: 'Buat order tiket (FR-2) — wajib lolos Turnstile bila aktif' })
-  @Throttle({ default: { ttl: 60_000, limit: 5 } }) // PRD §12.5: order 5/menit/IP
+  @Throttle({ default: { ttl: 60_000, limit: 20 } }) // revisi 2026-11: dilonggarkan (captcha Turnstile kini jadi lapisan utama anti-bot)
   @Post()
   @HttpCode(201)
   async create(@Body() dto: CreateOrderDto, @Ip() ip: string) {
