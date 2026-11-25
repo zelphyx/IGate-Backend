@@ -54,14 +54,20 @@ export class OrdersService {
     // Captcha (Cloudflare Turnstile) — anti-bot order; no-op bila secret kosong (dev/test).
     await this.turnstile.verifyOrThrow(options.captchaToken, options.ip);
 
+    const nama = dto.nama.trim();
+    const nim = dto.nim.trim();
+    const nomorHp = dto.nomorHp.replace(/[\s\-()]/g, '');
+    const email = dto.email.trim().toLowerCase();
+    const kodeVoucher = dto.kodeVoucher?.trim() || undefined;
+
     // NIM 10–20 digit angka (keputusan panitia 2026-11: prefix 2406012 tidak lagi diwajibkan).
-    if (!/^\d{10,20}$/.test(dto.nim)) {
+    if (!/^\d{10,20}$/.test(nim)) {
       throw new HttpException(
         { statusCode: 422, code: 'NIM_TIDAK_VALID', message: 'NIM harus berupa angka 10–20 digit.' },
         HttpStatus.UNPROCESSABLE_ENTITY,
       );
     }
-    if (!/^(?:\+62|62|0)8\d{7,12}$/.test(dto.nomorHp)) {
+    if (!/^(?:\+62|62|0)8\d{7,12}$/.test(nomorHp)) {
       throw new HttpException(
         { statusCode: 422, code: 'NOMOR_HP_TIDAK_VALID', message: 'Nomor HP harus format 08xx / +62.' },
         HttpStatus.UNPROCESSABLE_ENTITY,
@@ -72,141 +78,29 @@ export class OrdersService {
     const maxTickets = this.config.get<number>('maxTickets')!;
     const expiryMinutes = this.config.get<number>('paymentExpiryMinutes')!;
 
-    let created: Tiket;
-    let paymentFailed = false;
-    let fullCoverOrder = false;
-
     // Validasi voucher sebelum transaksi (kontrak VouchersService.validateForPurchase).
     let voucherInfo: { voucherId: number; kode: string; nilai: string } | null = null;
-    if (dto.kodeVoucher) {
-      const { voucher } = await this.vouchers.validateForPurchase(dto.kodeVoucher);
+    if (kodeVoucher) {
+      const { voucher } = await this.vouchers.validateForPurchase(kodeVoucher);
       voucherInfo = { voucherId: voucher.id, kode: voucher.kodeVoucher, nilai: voucher.nilaiVoucher.toString() };
     }
 
-    try {
-      created = await this.prisma.$transaction(async (tx) => {
-        // Gap-lock indeks nim (REPEATABLE READ) → race-safe BR-03 & BR-04.
-        await tx.$queryRaw`SELECT id FROM tiket WHERE nim = ${dto.nim} FOR UPDATE`;
+    const { tiket: reservedTiket, fullCoverOrder } = await this.reserveTicketWithRetry({
+      nama,
+      nim,
+      angkatan: dto.angkatan ?? 2000 + parseInt(nim.slice(0, 2), 10),
+      nomorHp,
+      email,
+      hargaTiket,
+      maxTickets,
+      voucherInfo,
+    });
 
-        const activeCount = await tx.tiket.count({
-          where: {
-            nim: dto.nim,
-            statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] },
-          },
-        });
-        if (activeCount > 0) {
-          throw new HttpException(
-            { statusCode: 409, code: 'NIM_SUDAH_TERDAFTAR', message: 'NIM ini sudah punya tiket aktif (BR-03).' },
-            HttpStatus.CONFLICT,
-          );
-        }
-        const used = await tx.tiket.count({
-          where: { statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] } },
-        });
-        if (used >= maxTickets) {
-          throw new HttpException(
-            { statusCode: 409, code: 'KUOTA_HABIS', message: 'Kuota tiket sudah habis (BR-04).', sisaKuota: 0 },
-            HttpStatus.CONFLICT,
-          );
-        }
+    let created = reservedTiket;
+    let paymentFailed = false;
 
-        // Voucher: lock baris voucher agar dua order simultan tak bisa sama-sama pakai.
-        if (voucherInfo) {
-          await tx.$queryRaw`SELECT id FROM voucher WHERE kode_voucher = ${voucherInfo.kode} FOR UPDATE`;
-          const reserved = await tx.tiket.count({
-            where: {
-              kodeVoucher: voucherInfo.kode,
-              statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] },
-            },
-          });
-          if (reserved > 0) {
-            throw new HttpException(
-              { statusCode: 422, code: 'VOUCHER_TERPAKAI', message: 'Voucher sudah dipakai order lain.' },
-              HttpStatus.UNPROCESSABLE_ENTITY,
-            );
-          }
-        }
-
-        // Diskon & total (BR-13, tanpa float): diskon = min(nilai voucher, harga).
-        const harga = hargaTiket;
-        const diskon = voucherInfo ? minMoney(voucherInfo.nilai, harga) : '0';
-        const totalBayar = voucherInfo ? subMoney(harga, diskon) : harga;
-        fullCoverOrder = isZeroMoney(totalBayar);
-
-        const tiket = await tx.tiket.create({
-          data: {
-            nama: dto.nama,
-            nim: dto.nim,
-            angkatan: dto.angkatan ?? 2000 + parseInt(dto.nim.slice(0, 2), 10),
-            nomorHp: dto.nomorHp,
-            email: dto.email.toLowerCase(),
-            hargaTiket: harga,
-            // Kode tampilan unik — collision acak 6 char ditangani retry di bawah (P2002 kode_tiket).
-            kodeTiket: generateKodeTiket(),
-            // Token acak untuk URL status publik — TKT-{id} tidak lagi diekspos (anti-enumerasi).
-            publicToken: generatePublicToken(),
-            kodeVoucher: voucherInfo?.kode ?? null,
-            diskon,
-            totalBayar,
-            statusPembayaran: TICKET_PAYMENT_STATUS.UNPAID,
-            statusTiket: TICKET_STATUS.PENDING,
-          },
-        });
-
-        if (fullCoverOrder) {
-          // BR-08 full-cover: tanpa invoice DOKU — langsung lunas via voucher (markTicketPaid
-          // yang mengonsumsi voucher & membuat rekap format baku, FR-7.1a).
-          return tiket;
-        }
-
-        try {
-          // QRIS dinamis (payment/charge) — frontend menggambar qrContent jadi QRIS asli.
-          // Fee gateway dilempar ke pembeli: nominal tagihan = ceil(total/(1−fee)),
-          // totalBayar & rekap tetap mencatat harga asli (net ke panitia tetap total).
-          const feePermille = this.config.get<number>('paymentFeePermille') ?? 0;
-          const tagihan = feePermille > 0 ? addFeePercent(totalBayar, feePermille) : totalBayar;
-          const trx = await this.belibayar.createQrisTransaction({
-            merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${tiket.id}`,
-            amount: Number(tagihan),
-            expiredMinutes: expiryMinutes,
-            customerName: dto.nama,
-            customerEmail: dto.email,
-            customerPhone: dto.nomorHp,
-            method: 'qris',
-            orderItemName: 'Tiket IGATE',
-          });
-          return await tx.tiket.update({
-            where: { id: tiket.id },
-            data: {
-              dokuInvoiceId: trx.reference,
-              dokuCheckoutUrl: trx.checkoutUrl || null,
-              qrContent: trx.qrContent ?? null,
-              qrUrl: trx.qrUrl ?? null,
-            },
-          });
-        } catch {
-          // Belibayar gagal setelah retry → tiket FAILED + WARN (PLAN §T4), rollback dicegah.
-          paymentFailed = true;
-          return await tx.tiket.update({
-            where: { id: tiket.id },
-            data: { statusPembayaran: TICKET_PAYMENT_STATUS.FAILED },
-          });
-        }
-      });
-    } catch (err) {
-      if (err instanceof HttpException) throw err; // validasi/konflik → rollback normal
-      // Collision kode tampilan acak (P2002 pada kode_tiket) → coba ulang sekali
-      if (
-        (err as { code?: string })?.code === 'P2002' &&
-        (err as { meta?: { target?: string[] } })?.meta?.target?.includes('kode_tiket')
-      ) {
-        return this.create(dto);
-      }
-      throw err;
-    }
-
-    // Full-cover: setelah commit order, tandai lunas via satu pintu (emits ticket.paid).
-    if (voucherInfo && fullCoverOrder) {
+    if (fullCoverOrder && voucherInfo) {
+      // Full-cover: setelah commit order, tandai lunas via satu pintu (emits ticket.paid).
       await this.payments.markTicketPaid(
         created.id,
         PAYMENT_METHODS.VOUCHER,
@@ -215,6 +109,38 @@ export class OrdersService {
       );
       created =
         (await this.prisma.tiket.findUnique({ where: { id: created.id } })) ?? created;
+    } else if (!fullCoverOrder) {
+      // Panggil Belibayar DI LUAR transaksi Prisma agar tidak kena timeout 5 detik dan tidak menahan row lock DB.
+      try {
+        const feePermille = this.config.get<number>('paymentFeePermille') ?? 0;
+        const tagihan = feePermille > 0 ? addFeePercent(created.totalBayar.toString(), feePermille) : created.totalBayar.toString();
+        const trx = await this.belibayar.createQrisTransaction({
+          merchantRef: `${MERCHANT_REF_PREFIX.TIKET}${created.id}`,
+          amount: Number(tagihan),
+          expiredMinutes: expiryMinutes,
+          customerName: nama,
+          customerEmail: email,
+          customerPhone: nomorHp,
+          method: 'qris',
+          orderItemName: 'Tiket IGATE',
+        });
+        created = await this.prisma.tiket.update({
+          where: { id: created.id },
+          data: {
+            dokuInvoiceId: trx.reference,
+            dokuCheckoutUrl: trx.checkoutUrl || null,
+            qrContent: trx.qrContent ?? null,
+            qrUrl: trx.qrUrl ?? null,
+          },
+        });
+      } catch {
+        // Belibayar gagal setelah retry → tiket FAILED + WARN (PLAN §T4).
+        paymentFailed = true;
+        created = await this.prisma.tiket.update({
+          where: { id: created.id },
+          data: { statusPembayaran: TICKET_PAYMENT_STATUS.FAILED },
+        });
+      }
     }
 
     if (paymentFailed) {
@@ -246,6 +172,108 @@ export class OrdersService {
     void this.discord.notifyStock();
 
     return { tiket: created, instruksiBayar };
+  }
+
+  /**
+   * Reservasi baris tiket secara atomik & race-safe (BR-03, BR-04, lock voucher).
+   * Retry tanpa memverifikasi ulang Turnstile jika terjadi collision kode_tiket (P2002).
+   */
+  private async reserveTicketWithRetry(
+    params: {
+      nama: string;
+      nim: string;
+      angkatan: number;
+      nomorHp: string;
+      email: string;
+      hargaTiket: string;
+      maxTickets: number;
+      voucherInfo: { voucherId: number; kode: string; nilai: string } | null;
+    },
+    retriesLeft = 1,
+  ): Promise<{ tiket: Tiket; fullCoverOrder: boolean }> {
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        // Gap-lock indeks nim (REPEATABLE READ) → race-safe BR-03 & BR-04.
+        await tx.$queryRaw`SELECT id FROM tiket WHERE nim = ${params.nim} FOR UPDATE`;
+
+        const activeCount = await tx.tiket.count({
+          where: {
+            nim: params.nim,
+            statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] },
+          },
+        });
+        if (activeCount > 0) {
+          throw new HttpException(
+            { statusCode: 409, code: 'NIM_SUDAH_TERDAFTAR', message: 'NIM ini sudah punya tiket aktif (BR-03).' },
+            HttpStatus.CONFLICT,
+          );
+        }
+        const used = await tx.tiket.count({
+          where: { statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] } },
+        });
+        if (used >= params.maxTickets) {
+          throw new HttpException(
+            { statusCode: 409, code: 'KUOTA_HABIS', message: 'Kuota tiket sudah habis (BR-04).', sisaKuota: 0 },
+            HttpStatus.CONFLICT,
+          );
+        }
+
+        // Voucher: lock baris voucher agar dua order simultan tak bisa sama-sama pakai.
+        if (params.voucherInfo) {
+          await tx.$queryRaw`SELECT id FROM voucher WHERE kode_voucher = ${params.voucherInfo.kode} FOR UPDATE`;
+          const reserved = await tx.tiket.count({
+            where: {
+              kodeVoucher: params.voucherInfo.kode,
+              statusPembayaran: { in: [TICKET_PAYMENT_STATUS.UNPAID, TICKET_PAYMENT_STATUS.PAID] },
+            },
+          });
+          if (reserved > 0) {
+            throw new HttpException(
+              { statusCode: 422, code: 'VOUCHER_TERPAKAI', message: 'Voucher sudah dipakai order lain.' },
+              HttpStatus.UNPROCESSABLE_ENTITY,
+            );
+          }
+        }
+
+        // Diskon & total (BR-13, tanpa float): diskon = min(nilai voucher, harga).
+        const harga = params.hargaTiket;
+        const diskon = params.voucherInfo ? minMoney(params.voucherInfo.nilai, harga) : '0';
+        const totalBayar = params.voucherInfo ? subMoney(harga, diskon) : harga;
+        const fullCoverOrder = isZeroMoney(totalBayar);
+
+        const tiket = await tx.tiket.create({
+          data: {
+            nama: params.nama,
+            nim: params.nim,
+            angkatan: params.angkatan,
+            nomorHp: params.nomorHp,
+            email: params.email,
+            hargaTiket: harga,
+            // Kode tampilan unik — collision acak 6 char ditangani retry (P2002 kode_tiket).
+            kodeTiket: generateKodeTiket(),
+            // Token acak untuk URL status publik — TKT-{id} tidak lagi diekspos (anti-enumerasi).
+            publicToken: generatePublicToken(),
+            kodeVoucher: params.voucherInfo?.kode ?? null,
+            diskon,
+            totalBayar,
+            statusPembayaran: TICKET_PAYMENT_STATUS.UNPAID,
+            statusTiket: TICKET_STATUS.PENDING,
+          },
+        });
+
+        return { tiket, fullCoverOrder };
+      });
+    } catch (err) {
+      if (err instanceof HttpException) throw err;
+      if (
+        retriesLeft > 0 &&
+        (err as { code?: string })?.code === 'P2002' &&
+        (err as { meta?: { target?: string[] } })?.meta?.target?.includes('kode_tiket')
+      ) {
+        return this.reserveTicketWithRetry(params, retriesLeft - 1);
+      }
+      throw err;
+    }
   }
 
   async findByMerchantRef(merchantRef: string): Promise<Tiket> {

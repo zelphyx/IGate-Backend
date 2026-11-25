@@ -23,7 +23,9 @@ export function maskNim(nim: string): string {
 /** Nama untuk view publik: huruf pertama tiap kata utuh, sisanya bintang ("Budi S***"). */
 export function maskNama(nama: string): string {
   return nama
+    .trim()
     .split(/\s+/)
+    .filter(Boolean)
     .map((kata) =>
       kata.length <= 2 ? kata[0] + '*' : `${kata[0]}${'*'.repeat(kata.length - 2)}${kata[kata.length - 1]}`,
     )

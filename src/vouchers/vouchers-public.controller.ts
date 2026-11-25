@@ -26,8 +26,8 @@ export class VouchersPublicController {
   @Public()
   @Get(':kode')
   @HttpCode(200)
-  // PRD §12.5: brute-force kode → 10 cek/menit/IP
-  @Throttle({ default: { ttl: 60_000, limit: 10 } })
+  // Longgarkan ke 60/menit/IP agar tidak mudah 429 pada Wi-Fi kampus / CGNAT / live check
+  @Throttle({ default: { ttl: 60_000, limit: 60 } })
   @ApiOperation({ summary: 'Cek validitas kode voucher (publik, tanpa auth)' })
   async check(@Param('kode') kode: string): Promise<VoucherCheckResult> {
     return this.vouchers.checkPublic(kode);

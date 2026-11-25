@@ -1,4 +1,4 @@
-import { maskEmail, maskNim, maskPhone } from './mask';
+import { maskEmail, maskNama, maskNim, maskPhone } from './mask';
 
 describe('mask utils (PRD §12.6)', () => {
   it('maskEmail: j***@gmail.com', () => {
@@ -19,5 +19,9 @@ describe('mask utils (PRD §12.6)', () => {
 
   it('maskNim: NIM utuh (tidak dimask, kebutuhan panitia)', () => {
     expect(maskNim('2406012123')).toBe('2406012123');
+  });
+
+  it('maskNama: spasi ekstra tidak menghasilkan undefined*', () => {
+    expect(maskNama('  Budi   Santoso  ')).toBe('B**i S*****o');
   });
 });

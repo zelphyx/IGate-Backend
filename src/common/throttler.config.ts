@@ -4,7 +4,7 @@ import type { ThrottlerModuleOptions } from '@nestjs/throttler';
 import { ClientIpRequest, resolveClientIp } from './utils/client-ip';
 
 /**
- * Opsi ThrottlerModule: batas global 60 req/menit per IP klien.
+ * Opsi ThrottlerModule: batas global 200 req/menit per IP klien.
  * Kunci "IP klien" ditentukan oleh `resolveClientIp` (lihat catatan keamanan di sana).
  * Batas per-route (`@Throttle`) tetap berlaku dan memakai kunci yang sama.
  */
@@ -16,7 +16,7 @@ export function buildThrottlerOptions(config: ConfigService): ThrottlerModuleOpt
       : 'Rate limit memakai IP koneksi langsung (TRUST_CF_CONNECTING_IP=false).',
   );
   return {
-    throttlers: [{ ttl: 60_000, limit: 60 }],
+    throttlers: [{ ttl: 60_000, limit: 200 }],
     getTracker: (req) => resolveClientIp(req as ClientIpRequest, trustCloudflareHeader),
   };
 }

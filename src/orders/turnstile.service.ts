@@ -41,6 +41,7 @@ export class TurnstileService {
     if (ip) body.set('remoteip', ip);
 
     let success = false;
+    let errorCodes: string[] = [];
     try {
       const res = await fetch(VERIFY_URL, {
         method: 'POST',
@@ -48,8 +49,15 @@ export class TurnstileService {
         body: body.toString(),
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
-      const json = (await res.json().catch(() => ({}))) as { success?: boolean };
+      const json = (await res.json().catch(() => ({}))) as {
+        success?: boolean;
+        'error-codes'?: string[];
+      };
       success = json.success === true;
+      errorCodes = Array.isArray(json['error-codes']) ? json['error-codes'] : [];
+      if (!res.ok) {
+        this.logger.warn(`Turnstile HTTP ${res.status}, error-codes=${errorCodes.join(',') || '-'}`);
+      }
     } catch (err) {
       // Cloudflare down/timeouts → fail-open akan membebani spam; pilihan aman: fail-closed.
       this.logger.error(`Turnstile verify gagal: ${(err as Error).message}`);
@@ -64,6 +72,9 @@ export class TurnstileService {
     }
 
     if (!success) {
+      this.logger.warn(
+        `Turnstile ditolak: error-codes=${errorCodes.join(',') || 'unknown'} remoteip=${ip ?? '-'}`,
+      );
       throw new HttpException(
         {
           statusCode: 403,

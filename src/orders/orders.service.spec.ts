@@ -48,6 +48,10 @@ describe('OrdersService (T4+T8)', () => {
 
   beforeEach(async () => {
     let createdRow: Record<string, unknown> | null = null;
+    const updateTiket = jest.fn().mockImplementation(({ where, data }) => {
+      createdRow = { ...createdRow, id: where.id, ...data };
+      return Promise.resolve(createdRow);
+    });
     tx = {
       $queryRaw: jest.fn().mockResolvedValue([]),
       tiket: {
@@ -56,13 +60,12 @@ describe('OrdersService (T4+T8)', () => {
           createdRow = { id: 7, publicToken: 'a'.repeat(32), ...data };
           return Promise.resolve(createdRow);
         }),
-        update: jest.fn().mockImplementation(({ where, data }) =>
-          Promise.resolve({ ...createdRow, id: where.id, ...data })),
+        update: updateTiket,
       },
     };
     prisma = {
       $transaction: jest.fn((fn: (t: unknown) => Promise<unknown>) => fn(tx)),
-      tiket: { findUnique: jest.fn() },
+      tiket: { findUnique: jest.fn(), update: updateTiket },
     };
     doku = {
       createTransaction: jest.fn().mockResolvedValue({
@@ -168,10 +171,51 @@ describe('OrdersService (T4+T8)', () => {
   it('Belibayar gagal → tiket FAILED + logWarn, lalu 502 BELIBAYAR_GAGAL', async () => {
     doku.createQrisTransaction.mockRejectedValue(new Error('network down'));
     await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
-    expect(tx.tiket.update).toHaveBeenCalledWith(
+    expect(prisma.tiket.update).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'FAILED' }) }),
     );
     expect(discord.logWarn).toHaveBeenCalled();
+  });
+
+  it('normalisasi nomorHp ber-spasi/strip, nim spasi, & kodeVoucher kosong', async () => {
+    const result = await service.create({
+      ...validDto,
+      nim: ' 2406012123 ',
+      nomorHp: '+62 812-3456-7890',
+      kodeVoucher: '   ',
+    });
+    expect(result.tiket.nim).toBe('2406012123');
+    expect(result.tiket.nomorHp).toBe('+6281234567890');
+    expect(vouchers.validateForPurchase).not.toHaveBeenCalled();
+  });
+
+  it('collision kode_tiket (P2002) → retry DB tanpa memverifikasi ulang Turnstile', async () => {
+    const verify = jest.fn().mockResolvedValue(undefined);
+    const mod = await Test.createTestingModule({
+      providers: [
+        OrdersService,
+        { provide: PrismaService, useValue: prisma },
+        { provide: ConfigService, useValue: { get: (k: string) => CONFIG[k] } },
+        { provide: 'BelibayarClient', useValue: doku },
+        { provide: 'DokuClient', useValue: doku },
+        { provide: DiscordService, useValue: discord },
+        { provide: EventEmitter2, useValue: events },
+        { provide: PaymentsService, useValue: payments },
+        { provide: VouchersService, useValue: vouchers },
+        { provide: TurnstileService, useValue: { enabled: true, verifyOrThrow: verify } },
+      ],
+    }).compile();
+    const svc = mod.get(OrdersService);
+    tx.tiket.create
+      .mockRejectedValueOnce({ code: 'P2002', meta: { target: ['kode_tiket'] } })
+      .mockImplementationOnce(({ data }: { data: Record<string, unknown> }) => {
+        const row = { id: 8, publicToken: 'b'.repeat(32), ...data };
+        prisma.tiket.update.mockResolvedValueOnce(row);
+        return Promise.resolve(row);
+      });
+    await svc.create({ ...validDto, captchaToken: 'tok-once' }, { captchaToken: 'tok-once', ip: '1.2.3.4' });
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(tx.tiket.create).toHaveBeenCalledTimes(2);
   });
 
   it('findByMerchantRef: ref tidak valid → 404', async () => {

@@ -1,4 +1,4 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsNotEmpty,
@@ -10,16 +10,19 @@ import {
 } from 'class-validator';
 
 export class CreateVoucherDto {
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
   namaPemberi!: string;
 
   /** NIM pemberi (mahasiswa) — 14 digit (keputusan panitia 2026-11). */
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @Matches(/^\d{14}$/, { message: 'nim harus 14 digit.' })
   nim!: string;
 
+  @Transform(({ value }) => (typeof value === 'string' ? value.replace(/[\s\-()]/g, '') : value))
   @IsString()
   @Matches(/^(?:\+62|62|0)8\d{7,12}$/, { message: 'nomorHp harus format 08xx / +62.' })
   nomorHp!: string;

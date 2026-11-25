@@ -1,6 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, Request } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, Min } from 'class-validator';
 import { Roles } from '../common/decorators/roles.decorator';
 import { ROLES, VOUCHER_STATUS } from '../common/constants';
@@ -10,6 +10,7 @@ import { CreateVoucherDto } from './dto/create-voucher.dto';
 
 export class ListVouchersQuery {
   @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || undefined : value))
   @IsIn(Object.values(VOUCHER_STATUS))
   status?: string;
 

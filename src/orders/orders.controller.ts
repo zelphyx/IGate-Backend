@@ -1,21 +1,35 @@
-import { Body, Controller, Get, HttpCode, Ip, Param, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, Post, Req } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
+import type { Request } from 'express';
 import { OrdersService } from './orders.service';
 import { CreateOrderDto } from './dto/create-order.dto';
 import { Public } from '../common/decorators/public.decorator';
+import { ClientIpRequest, resolveClientIp } from '../common/utils/client-ip';
 import { maskEmail, maskNama, maskNimPublic, maskPhone } from '../common/utils/mask';
 import { Tiket } from '@prisma/client';
 
 export class PaginationQuery {
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) page?: number = 1;
   @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(100) pageSize?: number = 20;
-  @IsOptional() @IsString() status?: string;
-  @IsOptional() @IsString() q?: string;
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || undefined : value))
+  @IsString()
+  status?: string;
+  @IsOptional()
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() || undefined : value))
+  @IsString()
+  q?: string;
   /** Tahun angkatan penuh, mis. 2024 (format persis: 4 digit). */
-  @IsOptional() @Type(() => Number) @IsInt() @Min(2000) @Max(2100) angkatan?: number;
+  @IsOptional()
+  @Transform(({ value }) => (value === '' || value === null || value === undefined ? undefined : Number(value)))
+  @IsInt()
+  @Min(2000)
+  @Max(2100)
+  angkatan?: number;
 }
 
 /** View status publik — PII berat dimasking (revisi keamanan 2026-11): nama & NIM tidak utuh. */
@@ -37,17 +51,25 @@ function publicView(tiket: Tiket) {
 @ApiTags('orders')
 @Controller('orders')
 export class OrdersController {
-  constructor(private readonly orders: OrdersService) {}
+  private readonly trustCfConnectingIp: boolean;
+
+  constructor(
+    private readonly orders: OrdersService,
+    config: ConfigService,
+  ) {
+    this.trustCfConnectingIp = config.get<boolean>('trustCfConnectingIp') ?? false;
+  }
 
   @Public()
   @ApiOperation({ summary: 'Buat order tiket (FR-2) — wajib lolos Turnstile bila aktif' })
   @Throttle({ default: { ttl: 60_000, limit: 100 } }) // revisi 2026-11: captcha Turnstile jadi lapisan utama anti-bot; limit longgar
   @Post()
   @HttpCode(201)
-  async create(@Body() dto: CreateOrderDto, @Ip() ip: string) {
+  async create(@Body() dto: CreateOrderDto, @Req() req: Request) {
+    const clientIp = resolveClientIp(req as ClientIpRequest, this.trustCfConnectingIp);
     const { tiket, instruksiBayar } = await this.orders.create(dto, {
       captchaToken: dto.captchaToken,
-      ip,
+      ip: clientIp !== 'unknown' ? clientIp : undefined,
     });
     return {
       // publicToken = kunci URL status; TKT-{id} internal tidak diekspos (anti-enumerasi).
@@ -62,7 +84,7 @@ export class OrdersController {
 
   @Public()
   @ApiOperation({ summary: 'Cek status order publik via token acak, PII dimasking (FR-2.5)' })
-  @Throttle({ default: { ttl: 60_000, limit: 20 } }) // 20/menit/IP — token dicoba brute tetap jauh di luar ini
+  @Throttle({ default: { ttl: 60_000, limit: 120 } }) // cukup untuk polling 3-5 detik termasuk saat berbagi IP NAT
   @Get(':publicToken')
   async status(@Param('publicToken') publicToken: string) {
     const tiket = await this.orders.findByPublicToken(publicToken);
