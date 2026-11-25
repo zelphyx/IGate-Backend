@@ -43,7 +43,12 @@ async function bootstrap(): Promise<void> {
   // rawBody: true → HMAC verifikasi callback DOKU atas body mentah (FR-3.2)
   const app = await NestFactory.create(AppModule, { bufferLogs: true, rawBody: true });
   app.useLogger(app.get(Logger));
-  app.use(helmet());
+  app.use(
+    helmet({
+      // API diakses cross-origin dari frontend (igate.hmifundip.com)
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
   app.enableShutdownHooks();
 
   const config = app.get(ConfigService);
@@ -52,6 +57,7 @@ async function bootstrap(): Promise<void> {
   app.enableCors({
     origin: corsOrigins.length > 0 ? corsOrigins : false,
     credentials: true,
+    maxAge: 86400,
   });
 
   app.useGlobalPipes(
