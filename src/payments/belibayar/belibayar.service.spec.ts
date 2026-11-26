@@ -2,10 +2,12 @@ import { ConfigService } from '@nestjs/config';
 import {
   BelibayarLiveService,
   BelibayarStubService,
+  FALLBACK_CUSTOMER_NAME,
   mapBelibayarStatus,
   normalizeExpiryMinutes,
   normalizePhone,
   parseCallbackJson,
+  sanitizeCustomerName,
 } from './belibayar.service';
 import { BelibayarError, describeBelibayarError } from './belibayar.types';
 import { createHmac } from 'crypto';
@@ -262,6 +264,123 @@ describe('BelibayarLiveService', () => {
       const err = await fastService().createQrisTransaction(input).catch((e: unknown) => e);
       expect((err as BelibayarError).status).toBe(400);
       expect((err as BelibayarError).detail).toBe('jawaban bukan JSON');
+    });
+  });
+
+  describe('customer_name sesuai aturan Belibayar (5–25, alfanumerik/spasi/_/-, tanpa awalan PT/CV)', () => {
+    it.each([
+      ['Budi Santoso', 'Budi Santoso'],
+      ["Siti Nur'aini", 'Siti Nur aini'],
+      ['PT. Maju Jaya', 'Maju Jaya'],
+      ['CV Sumber Rejeki', 'Sumber Rejeki'],
+      ['Ani', 'Ani IGATE'],
+      ['Budi', 'Budi IGATE'],
+      ['  A.B.  ', 'A B IGATE'],
+      ['Muhammad Abdurrahman Al-Faruq Hakim', 'Muhammad Abdurrahman Al-F'],
+      ['José Ñandú', 'Jose Nandu'],
+      ['Udin Sedunia', 'Udin Sedunia'],
+      ['Putri Ayu', 'Putri Ayu'],
+      ['Ahmad_Fauzi-99', 'Ahmad_Fauzi-99'],
+      ['王小明', FALLBACK_CUSTOMER_NAME],
+      ['CV', FALLBACK_CUSTOMER_NAME],
+      ['', FALLBACK_CUSTOMER_NAME],
+    ])('sanitizeCustomerName(%j) → %j', (raw, expected) => {
+      expect(sanitizeCustomerName(raw)).toBe(expected);
+    });
+
+    it('hasil selalu memenuhi aturan untuk berbagai masukan aneh', () => {
+      const inputs = ['', ' ', 'A', 'AB', "O'Brien-Smith Jr.", 'PT PT PT', 'x'.repeat(80), '😀😀😀', 'Dr. H. Ahmad Zaki, S.Kom., M.T.'];
+      for (const raw of inputs) {
+        const out = sanitizeCustomerName(raw);
+        expect(out).toMatch(/^[A-Za-z0-9 _-]{5,25}$/);
+        expect(out).not.toMatch(/^(pt|cv|ud|pd)\b/i);
+      }
+    });
+
+    it('createQrisTransaction mengirim nama yang sudah disaring', async () => {
+      const live = createService();
+      const fetchFn = jest.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ success: true, data: { reference: 'TKT-9', amount: 45000, qr_content: 'QR' } }),
+      });
+      jest.spyOn(global, 'fetch').mockImplementation(fetchFn as unknown as typeof fetch);
+      await live.createQrisTransaction({
+        merchantRef: 'TKT-9',
+        amount: 45000,
+        expiredMinutes: 60,
+        customerName: "Siti Nur'aini",
+        customerEmail: 'siti@mail.id',
+        customerPhone: '081234567890',
+        orderItemName: 'Tiket IGATE',
+      });
+      const body = JSON.parse(String((fetchFn.mock.calls[0] as [string, RequestInit])[1].body));
+      expect(body.customer_name).toBe('Siti Nur aini');
+      jest.restoreAllMocks();
+    });
+
+    it('Belibayar tetap menolak customer_name → diulang sekali dengan nama generik', async () => {
+      const live = createService();
+      jest
+        .spyOn(live as unknown as { retryDelayMs(attempt: number): number }, 'retryDelayMs')
+        .mockReturnValue(0);
+      const fetchFn = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: false,
+          status: 400,
+          json: async () => ({
+            success: false,
+            messages: 'Request body tidak valid',
+            data: { code: 'VALIDATION_ERROR', fields: { customer_name: '5-25 chars' } },
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ success: true, data: { reference: 'TKT-9', amount: 45000, qr_content: 'QR' } }),
+        });
+      jest.spyOn(global, 'fetch').mockImplementation(fetchFn as unknown as typeof fetch);
+      const res = await live.createQrisTransaction({
+        merchantRef: 'TKT-9',
+        amount: 45000,
+        expiredMinutes: 60,
+        customerName: 'Budi Santoso',
+        customerEmail: 'budi@mail.id',
+        customerPhone: '081234567890',
+        orderItemName: 'Tiket IGATE',
+      });
+      expect(fetchFn).toHaveBeenCalledTimes(2);
+      const second = JSON.parse(String((fetchFn.mock.calls[1] as [string, RequestInit])[1].body));
+      expect(second.customer_name).toBe(FALLBACK_CUSTOMER_NAME);
+      expect(res.qrContent).toBe('QR');
+      jest.restoreAllMocks();
+    });
+
+    it('400 validasi di field lain tidak diulang', async () => {
+      const live = createService();
+      const fetchFn = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({
+          success: false,
+          messages: 'Request body tidak valid',
+          data: { code: 'VALIDATION_ERROR', fields: { customer_email: 'invalid' } },
+        }),
+      });
+      jest.spyOn(global, 'fetch').mockImplementation(fetchFn as unknown as typeof fetch);
+      const err = await live
+        .createQrisTransaction({
+          merchantRef: 'TKT-9',
+          amount: 45000,
+          expiredMinutes: 60,
+          customerName: 'Budi Santoso',
+          customerEmail: 'bukan-email',
+          customerPhone: '081234567890',
+          orderItemName: 'Tiket IGATE',
+        })
+        .catch((e: unknown) => e);
+      expect(fetchFn).toHaveBeenCalledTimes(1);
+      expect((err as BelibayarError).status).toBe(400);
+      jest.restoreAllMocks();
     });
   });
 
