@@ -18,7 +18,8 @@ import {
 import { maskNim, maskPhone } from '../common/utils/mask';
 import { toCents, addFeePercent } from '../common/utils/money';
 import { DiscordService } from '../discord/discord.service';
-import { BelibayarClient } from '../payments/belibayar/belibayar.types';
+import { BelibayarClient, describeBelibayarError } from '../payments/belibayar/belibayar.types';
+import { voucherCustomerEmail } from '../common/utils/voucher-email';
 import { VOUCHER_CODE_REGEX, generateVoucherCode } from './voucher-code';
 import { CreateVoucherDto } from './dto/create-voucher.dto';
 
@@ -119,7 +120,7 @@ export class VouchersService {
         amount: Number(tagihan),
         expiredMinutes: expiryMinutes,
         customerName: dto.namaPemberi,
-        customerEmail: `voucher-${created.kodeVoucher.toLowerCase()}@igate.local`,
+        customerEmail: voucherCustomerEmail(this.config.get<string>('smtp.from'), created.kodeVoucher),
         customerPhone: dto.nomorHp,
         method: 'qris',
         orderItemName: `Voucher IGATE ${created.kodeVoucher}`,
@@ -136,7 +137,7 @@ export class VouchersService {
           .catch(() => undefined);
       }
       if (err instanceof HttpException) throw err;
-      this.logger.error(`createTransaction voucher gagal: ${(err as Error).message}`);
+      this.logger.error(`createTransaction voucher gagal: ${describeBelibayarError(err, true)}`);
       throw new HttpException(
         {
           statusCode: 502,

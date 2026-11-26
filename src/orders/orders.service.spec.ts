@@ -9,6 +9,7 @@ import { DiscordService } from '../discord/discord.service';
 import { PaymentsService } from '../payments/payments.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { DokuClient } from '../payments/doku/doku.types';
+import { BelibayarError } from '../payments/belibayar/belibayar.types';
 import { TICKET_PAYMENT_STATUS } from '../common/constants';
 
 // @nestjs/event-emitter ESM — di-mock menjadi kelas CJS biasa untuk DI (ts-jest hoist jest.mock)
@@ -175,6 +176,24 @@ describe('OrdersService (T4+T8)', () => {
       expect.objectContaining({ data: expect.objectContaining({ statusPembayaran: 'FAILED' }) }),
     );
     expect(discord.logWarn).toHaveBeenCalled();
+  });
+
+  it('Belibayar menolak → alert Discord memuat status + pesan, tanpa cuplikan jawaban', async () => {
+    doku.createQrisTransaction.mockRejectedValue(
+      new BelibayarError('Request body tidak valid', 422, undefined, '{"messages":["secret detail"]}'),
+    );
+    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
+    const alert = String(discord.logWarn.mock.calls[0][0]);
+    expect(alert).toContain('HTTP 422: Request body tidak valid');
+    expect(alert).not.toContain('secret detail');
+  });
+
+  it('Belibayar tak terjangkau → alert Discord memuat kode jaringan', async () => {
+    doku.createQrisTransaction.mockRejectedValue(
+      new BelibayarError('fetch failed (ECONNRESET)', undefined, 'ECONNRESET'),
+    );
+    await expect(service.create(validDto)).rejects.toMatchObject({ response: { code: 'BELIBAYAR_GAGAL' } });
+    expect(String(discord.logWarn.mock.calls[0][0])).toContain('jaringan ECONNRESET');
   });
 
   it('normalisasi nomorHp ber-spasi/strip, nim spasi, & kodeVoucher kosong', async () => {
