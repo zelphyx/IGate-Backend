@@ -11,6 +11,9 @@ import {
 } from './belibayar.types';
 
 const TIMEOUT_MS = 15_000;
+/** Total percobaan (1 awal + 2 ulang) dan batas waktu total untuk mengulang. */
+const MAX_ATTEMPTS = 3;
+const RETRY_BUDGET_MS = 20_000;
 const VALID_EXPIRY_MINUTES = [30, 60, 120, 360, 480, 720, 1440];
 
 /** Normalisasi durasi kadaluwarsa ke salah satu nilai yang didukung Belibayar. */
@@ -253,7 +256,34 @@ export class BelibayarLiveService implements BelibayarClient {
     };
   }
 
-  private async request<T>(path: string, init: RequestInit, retry = 1): Promise<T> {
+  /** Jeda sebelum percobaan ulang `attempt` (1, 2, ...): 400/800 ms + sedikit acak. Dipisah agar bisa diuji. */
+  protected retryDelayMs(attempt: number): number {
+    return 400 * attempt + Math.floor(Math.random() * 200);
+  }
+
+  /**
+   * Kegagalan yang aman diulang:
+   * - jaringan (belum ada jawaban dari Belibayar) — transaksi belum terbentuk;
+   * - 429 — ditolak sebelum diproses;
+   * - 502/503/504 hanya untuk GET (baca saja). Untuk POST, jawaban 5xx bisa berarti transaksi
+   *   sudah terbentuk, jadi tidak diulang agar tidak membuat tagihan ganda.
+   */
+  private isRetryable(err: BelibayarError, init: RequestInit): boolean {
+    if (err.status === undefined) return true;
+    if (err.status === 429) return true;
+    const isGet = (init.method ?? 'GET').toUpperCase() === 'GET';
+    return isGet && [502, 503, 504].includes(err.status);
+  }
+
+  /** Bungkus error `fetch` (undici) jadi BelibayarError dengan kode penyebab (ECONNRESET, EAI_AGAIN, ...). */
+  private toNetworkError(err: unknown): BelibayarError {
+    const e = err as { name?: string; message?: string; cause?: { code?: string; message?: string } };
+    const code = e?.name === 'TimeoutError' ? 'TIMEOUT' : e?.cause?.code;
+    const base = e?.message ?? 'fetch failed';
+    return new BelibayarError(code ? `${base} (${code})` : base, undefined, code);
+  }
+
+  private async request<T>(path: string, init: RequestInit): Promise<T> {
     const apiKey = this.config.getOrThrow<string>('belibayar.apiKey');
     const secretKey = this.config.getOrThrow<string>('belibayar.secretKey');
 
@@ -262,39 +292,53 @@ export class BelibayarLiveService implements BelibayarClient {
     const canonical = bodyStr || path;
     const signature = this.generateSignature(canonical, secretKey);
 
-    try {
-      const res = await fetch(`${this.baseUrl}${path}`, {
-        ...init,
-        headers: {
-          'X-Api-Key': apiKey,
-          'X-Signature': signature,
-          ...(bodyStr ? { 'Content-Type': 'application/json' } : {}),
-          ...(init.headers ?? {}),
-        },
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      });
+    const startedAt = Date.now();
+    for (let attempt = 1; ; attempt++) {
+      let failure: BelibayarError;
+      try {
+        const res = await fetch(`${this.baseUrl}${path}`, {
+          ...init,
+          headers: {
+            'X-Api-Key': apiKey,
+            'X-Signature': signature,
+            ...(bodyStr ? { 'Content-Type': 'application/json' } : {}),
+            ...(init.headers ?? {}),
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        });
 
-      const json = (await res.json().catch(() => ({}))) as {
-        success?: boolean;
-        messages?: string[] | string;
-        data?: unknown;
-      };
+        let parsed = true;
+        const json = (await res.json().catch(() => {
+          parsed = false;
+          return {};
+        })) as {
+          success?: boolean;
+          messages?: string[] | string;
+          data?: unknown;
+        };
 
-      if (!res.ok) {
+        if (res.ok) return json as T;
+
         const msg = Array.isArray(json.messages)
           ? json.messages.join('; ')
           : json.messages ?? `HTTP ${res.status}`;
-        throw new BelibayarError(msg, res.status);
+        const detail = parsed ? JSON.stringify(json).slice(0, 300) : 'jawaban bukan JSON';
+        failure = new BelibayarError(msg, res.status, undefined, detail);
+      } catch (err) {
+        failure = this.toNetworkError(err);
       }
 
-      return json as T;
-    } catch (err) {
-      if (retry > 0 && !(err instanceof BelibayarError)) {
-        this.logger.warn(`Belibayar request gagal (${(err as Error).message}), retry...`);
-        return this.request<T>(path, init, retry - 1);
+      // Batas total supaya pembeli tidak menunggu terlalu lama (timeout per percobaan 15 dtk).
+      const withinBudget = Date.now() - startedAt < RETRY_BUDGET_MS;
+      if (attempt < MAX_ATTEMPTS && withinBudget && this.isRetryable(failure, init)) {
+        const wait = this.retryDelayMs(attempt);
+        this.logger.warn(
+          `Belibayar ${init.method ?? 'GET'} ${path} gagal (${failure.describe()}), percobaan ${attempt}/${MAX_ATTEMPTS}, ulang ${wait} ms lagi`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, wait));
+        continue;
       }
-      if (err instanceof BelibayarError) throw err;
-      throw new BelibayarError((err as Error).message);
+      throw failure;
     }
   }
 

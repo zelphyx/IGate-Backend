@@ -15,7 +15,7 @@ import { generateKodeTiket } from '../common/utils/kode-tiket';
 import { generatePublicToken } from '../common/utils/public-token';
 import { TurnstileService } from './turnstile.service';
 import { DiscordService } from '../discord/discord.service';
-import { BelibayarClient } from '../payments/belibayar/belibayar.types';
+import { BelibayarClient, describeBelibayarError } from '../payments/belibayar/belibayar.types';
 import { PaymentsService } from '../payments/payments.service';
 import { VouchersService } from '../vouchers/vouchers.service';
 import { CreateOrderDto } from './dto/create-order.dto';
@@ -98,6 +98,7 @@ export class OrdersService {
 
     let created = reservedTiket;
     let paymentFailed = false;
+    let paymentFailure: unknown;
 
     if (fullCoverOrder && voucherInfo) {
       // Full-cover: setelah commit order, tandai lunas via satu pintu (emits ticket.paid).
@@ -133,9 +134,10 @@ export class OrdersService {
             qrUrl: trx.qrUrl ?? null,
           },
         });
-      } catch {
+      } catch (err) {
         // Belibayar gagal setelah retry → tiket FAILED + WARN (PLAN §T4).
         paymentFailed = true;
+        paymentFailure = err;
         created = await this.prisma.tiket.update({
           where: { id: created.id },
           data: { statusPembayaran: TICKET_PAYMENT_STATUS.FAILED },
@@ -144,7 +146,14 @@ export class OrdersService {
     }
 
     if (paymentFailed) {
-      this.discord.logWarn(`Belibayar gagal dibuat untuk order TKT-${created.id} — gateway error, pembeli perlu order ulang`);
+      // Alasan sebenarnya dicatat: log server memuat cuplikan jawaban Belibayar, alert Discord
+      // hanya status/kode + pesan (tanpa isi jawaban).
+      this.logger.error(
+        `Belibayar gagal untuk TKT-${created.id}: ${describeBelibayarError(paymentFailure, true)}`,
+      );
+      this.discord.logWarn(
+        `Belibayar gagal dibuat untuk order TKT-${created.id} — ${describeBelibayarError(paymentFailure)}; pembeli perlu order ulang`,
+      );
       throw new HttpException(
         { statusCode: 502, code: 'BELIBAYAR_GAGAL', message: 'Gagal membuat invoice pembayaran. Coba beberapa saat lagi.' },
         HttpStatus.BAD_GATEWAY,
