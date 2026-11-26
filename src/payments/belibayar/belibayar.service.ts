@@ -31,6 +31,30 @@ export function normalizePhone(phone: string): string {
   return digits;
 }
 
+/** Nama generik yang pasti lolos aturan Belibayar bila nama pembeli tidak bisa dipakai. */
+export const FALLBACK_CUSTOMER_NAME = 'Pembeli IGATE';
+
+/**
+ * Saring nama pembeli ke aturan `customer_name` Belibayar: 5–25 karakter, hanya huruf/angka,
+ * spasi, underscore, dan strip, tanpa awalan badan usaha (PT/CV/dll). Nama di database tiket
+ * tidak berubah; ini hanya nama yang dikirim ke penyedia pembayaran.
+ * Tanpa penyaringan, nama seperti "Ani", "Siti Nur'aini", atau "Muhammad Abdurrahman Al-Faruq Hakim"
+ * ditolak dengan HTTP 400 "Request body tidak valid" dan pembeli gagal memesan.
+ */
+export function sanitizeCustomerName(raw: string): string {
+  let s = (raw ?? '')
+    .normalize('NFKD')
+    .replace(/[̀-ͯ]/g, '') // buang aksen: é → e
+    .replace(/[^A-Za-z0-9 _-]+/g, ' ') // titik, koma, apostrof, emoji, dll → spasi
+    .replace(/\s+/g, ' ')
+    .trim();
+  // Buang awalan badan usaha sebagai kata utuh (tidak menyentuh nama seperti "Udin" atau "Putri").
+  s = s.replace(/^((pt|cv|ud|pd|po|firma|yayasan|koperasi)\b[\s_-]*)+/i, '').trim();
+  if (s.length > 25) s = s.slice(0, 25).replace(/[\s_-]+$/, '');
+  if (s.length < 5) s = s ? `${s} IGATE` : FALLBACK_CUSTOMER_NAME;
+  return s;
+}
+
 /**
  * Klien Belibayar (Direct API & Payment Link) — docs.belibayar.id.
  * - QRIS dinamis      : POST {base}/direct/v1[/sandbox]/payment/charge   → data.qr_content (EMV)
@@ -81,7 +105,7 @@ export class BelibayarLiveService implements BelibayarClient {
       description: input.orderItemName,
       expiry_minutes: normalizeExpiryMinutes(input.expiredMinutes),
       customer_input_by: 'merchant',
-      customer_name: input.customerName,
+      customer_name: sanitizeCustomerName(input.customerName),
       customer_email: input.customerEmail,
       customer_phone: normalizePhone(input.customerPhone),
     };
@@ -97,11 +121,7 @@ export class BelibayarLiveService implements BelibayarClient {
       bodyObj.channels_allowed = channels.map((c) => c.toLowerCase());
     }
 
-    const jsonBody = JSON.stringify(bodyObj);
-    const data = await this.request<Record<string, unknown>>(
-      `${this.pathPrefix}/payment-link`,
-      { method: 'POST', body: jsonBody },
-    );
+    const data = await this.postWithNameFallback(`${this.pathPrefix}/payment-link`, bodyObj, input.merchantRef);
 
     const linkData = (data['data'] ?? data) as Record<string, unknown>;
     const expiresAtSec = Number(linkData['expires_at'] ?? 0);
@@ -127,7 +147,7 @@ export class BelibayarLiveService implements BelibayarClient {
       reference: input.merchantRef,
       amount: input.amount,
       pay_method: { method: 'qris' },
-      customer_name: input.customerName,
+      customer_name: sanitizeCustomerName(input.customerName),
       customer_email: input.customerEmail,
       static_qr: false,
       // payment/charge pakai expired_time unix detik (min 60s, maks 90 hari)
@@ -137,11 +157,7 @@ export class BelibayarLiveService implements BelibayarClient {
       bodyObj['customer_phone'] = normalizePhone(input.customerPhone);
     }
 
-    const jsonBody = JSON.stringify(bodyObj);
-    const data = await this.request<Record<string, unknown>>(
-      `${this.pathPrefix}/payment/charge`,
-      { method: 'POST', body: jsonBody },
-    );
+    const data = await this.postWithNameFallback(`${this.pathPrefix}/payment/charge`, bodyObj, input.merchantRef);
 
     const d = (data['data'] ?? {}) as Record<string, unknown>;
     const expiredAtSec = Number(d['expired_at'] ?? 0);
@@ -254,6 +270,33 @@ export class BelibayarLiveService implements BelibayarClient {
       amount: Number(trx['amount'] ?? payload['amount'] ?? 0),
       checkoutUrl: payload['payment_link_url'] ? String(payload['payment_link_url']) : undefined,
     };
+  }
+
+  /**
+   * POST pembuatan transaksi. Bila Belibayar menolak `customer_name` (HTTP 400 VALIDATION_ERROR yang
+   * menyebut field itu) walau sudah disaring, ulangi sekali dengan nama generik supaya pembeli tidak
+   * gagal hanya karena nama. 400 validasi berarti transaksi belum terbentuk, jadi aman diulang.
+   */
+  private async postWithNameFallback(
+    path: string,
+    bodyObj: Record<string, unknown>,
+    merchantRef: string,
+  ): Promise<Record<string, unknown>> {
+    try {
+      return await this.request<Record<string, unknown>>(path, { method: 'POST', body: JSON.stringify(bodyObj) });
+    } catch (err) {
+      const nameRejected =
+        err instanceof BelibayarError &&
+        err.status === 400 &&
+        (err.detail ?? '').includes('customer_name') &&
+        bodyObj['customer_name'] !== FALLBACK_CUSTOMER_NAME;
+      if (!nameRejected) throw err;
+      this.logger.warn(`Belibayar menolak customer_name (ref ${merchantRef}); mengulang dengan nama generik`);
+      return this.request<Record<string, unknown>>(path, {
+        method: 'POST',
+        body: JSON.stringify({ ...bodyObj, customer_name: FALLBACK_CUSTOMER_NAME }),
+      });
+    }
   }
 
   /** Jeda sebelum percobaan ulang `attempt` (1, 2, ...): 400/800 ms + sedikit acak. Dipisah agar bisa diuji. */
